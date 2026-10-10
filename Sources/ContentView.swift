@@ -274,7 +274,10 @@ private struct QuickSettings: View {
                     .font(.caption)
                     .foregroundStyle(BW.mist)
 
-                Toggle("Tirage aléatoire des modèles", isOn: $config.randomPick)
+                VStack(spacing: 10) {
+                    Toggle("Tirage aléatoire des modèles", isOn: $config.randomPick)
+                    Toggle("Aucun doublon", isOn: $config.noDuplicates)
+                }
 
                 NavigationLink {
                     PersonasView()
@@ -295,6 +298,11 @@ private struct QuickSettings: View {
                     if config.count > 1 {
                         Label("≈ 1 notification toutes les \(formatDuration(config.totalDuration / Double(config.count - 1)))",
                               systemImage: "metronome")
+                    }
+                    if let capacity = ContentPicker.capacity(pool: pool, config: config), capacity < config.count {
+                        Label("Sans doublon, ces modèles permettent \(capacity) notification\(capacity > 1 ? "s" : "") au maximum : elles seront réparties sur toute la durée.",
+                              systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(BW.gold)
                     }
                     let possible = Planner.achievableDuration(config)
                     if !possible.contains(config.totalDuration) && config.count > 1 {

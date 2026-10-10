@@ -62,7 +62,13 @@ struct TemplatesView: View {
 }
 
 private struct TemplateRow: View {
+    @EnvironmentObject var store: AppStore
     let template: NotifTemplate
+
+    private var followUpTitle: String? {
+        guard let id = template.followUpID, let next = store.templates.first(where: { $0.id == id }) else { return nil }
+        return next.displayTitle.isEmpty ? "Sans titre" : next.displayTitle
+    }
 
     var body: some View {
         let slot = WebPersonas.slot(template.personaID ?? WebPersonas.defaultSender)
@@ -85,15 +91,31 @@ private struct TemplateRow: View {
                     .font(.footnote)
                     .foregroundStyle(BW.mist)
                     .lineLimit(2)
-                Text(slot?.label ?? "Nova")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(BW.mist)
+                HStack(spacing: 6) {
+                    Text(slot?.label ?? "Nova")
+                    if template.onlyAsFollowUp {
+                        Text("· en suite uniquement")
+                    }
+                    if let next = followUpTitle {
+                        Label(next, systemImage: "arrow.turn.down.right")
+                            .lineLimit(1)
+                    }
+                }
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(BW.mist)
             }
             Spacer(minLength: 0)
-            if template.weight != 1 {
-                Text("×\(Int(template.weight))")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(BW.gold)
+            VStack(alignment: .trailing, spacing: 4) {
+                if template.weight != 1 {
+                    Text("×\(Int(template.weight))")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BW.gold)
+                }
+                if template.maxPerRun > 0 {
+                    Label("\(template.maxPerRun)", systemImage: "number.circle")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(BW.mist)
+                }
             }
         }
         .contentShape(Rectangle())
@@ -237,6 +259,41 @@ struct TemplateEditor: View {
                     Text("Apparition")
                 } footer: {
                     Text("Un modèle ×3 sort trois fois plus souvent qu'un modèle ×1. Un modèle rare n'apparaît que selon la « chance de rare » réglée dans la configuration.")
+                }
+                .listRowBackground(BW.hull)
+
+                Section {
+                    Stepper(value: $draft.maxPerRun, in: 0...20) {
+                        HStack {
+                            Text("Maximum par scénario")
+                            Spacer()
+                            Text(verbatim: draft.maxPerRun == 0 ? "Illimité" : "\(draft.maxPerRun) fois")
+                                .foregroundStyle(BW.gold)
+                                .monospacedDigit()
+                        }
+                    }
+                } header: {
+                    Text("Répartition")
+                } footer: {
+                    Text("« 1 fois » : cette notification n'apparaît qu'une seule fois par scénario, jamais en double. Pour l'appliquer à tous les modèles, active « Aucun doublon » dans la configuration.")
+                }
+                .listRowBackground(BW.hull)
+
+                Section {
+                    Picker("Notification suivante", selection: $draft.followUpID) {
+                        Text("Aucune").tag(UUID?.none)
+                        ForEach(store.templates.filter { $0.id != draft.id && !$0.isEmpty }) { t in
+                            Text(t.displayTitle.isEmpty ? "Sans titre" : t.displayTitle).tag(Optional(t.id))
+                        }
+                    }
+                    if draft.followUpID != nil {
+                        DurationStepper(label: "Délai avant la suite", seconds: $draft.followUpDelay, range: 1...3600)
+                    }
+                    Toggle("Uniquement en suite d'une autre", isOn: $draft.onlyAsFollowUp)
+                } header: {
+                    Text("Cascade")
+                } footer: {
+                    Text("Notification suivante : envoyée automatiquement après celle-ci, à chaque fois. « Uniquement en suite » : ce modèle n'est jamais tiré au sort seul, il n'arrive qu'à la suite d'un autre.")
                 }
                 .listRowBackground(BW.hull)
 

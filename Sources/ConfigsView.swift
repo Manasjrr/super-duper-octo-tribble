@@ -183,6 +183,7 @@ struct ConfigEditor: View {
             Section {
                 Toggle("Tirage aléatoire", isOn: $config.randomPick)
                 Toggle("Éviter les répétitions", isOn: $config.avoidRepeats)
+                Toggle("Aucun doublon", isOn: $config.noDuplicates)
                 Toggle("Mélanger les textes", isOn: $config.mixContent)
                 if hasRare {
                     VStack(alignment: .leading) {
@@ -204,7 +205,7 @@ struct ConfigEditor: View {
             .listRowBackground(BW.hull)
 
             Section {
-                ForEach(store.templates.filter { !$0.isEmpty }) { t in
+                ForEach(store.templates.filter { !$0.isEmpty && !$0.onlyAsFollowUp }) { t in
                     let selected = config.templateIDs.isEmpty || config.templateIDs.contains(t.id)
                     Button {
                         toggle(t)
@@ -256,7 +257,7 @@ struct ConfigEditor: View {
     }
 
     private func toggle(_ t: NotifTemplate) {
-        let all = store.templates.filter { !$0.isEmpty }.map(\.id)
+        let all = store.templates.filter { !$0.isEmpty && !$0.onlyAsFollowUp }.map(\.id)
         var ids = config.templateIDs.isEmpty ? all : config.templateIDs
         if ids.contains(t.id) {
             guard ids.count > 1 else { return }  // on garde au moins un message
@@ -272,6 +273,7 @@ struct ConfigEditor: View {
             ? "Les modèles sont tirés au sort selon leur fréquence."
             : "Les modèles sont envoyés dans l'ordre de la liste."
         text += " « Mélanger » combine le titre d'un modèle avec le texte d'un autre."
+        text += " « Éviter les répétitions » empêche deux fois la même d'affilée ; « Aucun doublon » envoie chaque modèle au plus une fois par scénario."
         if !hasRare { text += " Marque un modèle comme rare pour activer les apparitions rares." }
         return text
     }

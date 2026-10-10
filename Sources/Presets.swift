@@ -4,7 +4,7 @@ import Foundation
 
 enum Presets {
     /// À incrémenter quand les exemples ou les données changent : la migration du store s'exécute alors une fois.
-    static let version = 3
+    static let version = 4
 
     private struct Spec {
         var title: String
@@ -13,6 +13,10 @@ enum Presets {
         var persona: String
         var weight: Double = 1
         var isRare = false
+        var key: String? = nil          // identifiant pour les cascades
+        var followUp: String? = nil     // clé du modèle envoyé ensuite
+        var followUpDelay: Double = 10
+        var onlyAsFollowUp = false
     }
 
     private static let specs: [Spec] = [
@@ -33,7 +37,8 @@ enum Presets {
         // Chat
         Spec(title: "Les potes · #général", body: "Alex : quelqu'un est chaud pour une partie ce soir ?",
              persona: "chat", weight: 2),
-        Spec(title: "Sarah", body: "t'es là ? 👀", persona: "chat"),
+        Spec(title: "Sarah", body: "t'es là ? 👀", persona: "chat", key: "sarah1", followUp: "sarah2", followUpDelay: 20),
+        Spec(title: "Sarah", body: "allô ? réponds 😤", persona: "chat", key: "sarah2", onlyAsFollowUp: true),
         Spec(title: "Mention dans #projets", body: "Lucas : tu peux regarder ça quand tu as le temps ?", persona: "chat"),
 
         // Banque
@@ -53,7 +58,9 @@ enum Presets {
 
         // Boutique
         Spec(title: "Commande expédiée 🚚", body: "Ta commande n° 1042 est en route. Livraison prévue demain.",
-             persona: "boutique"),
+             persona: "boutique", key: "commande", followUp: "livreur", followUpDelay: 30),
+        Spec(title: "Ton livreur arrive 📍", body: "Livraison dans environ 10 minutes. Sois prêt !",
+             persona: "boutique", key: "livreur", onlyAsFollowUp: true),
         Spec(title: "Ton panier t'attend", body: "3 articles sont toujours dans ton panier.", persona: "boutique"),
         Spec(title: "Vente flash ⚡", body: "-30 % sur une sélection pendant 24 h seulement.", persona: "boutique"),
 
@@ -66,12 +73,23 @@ enum Presets {
 
     private static func make(_ spec: Spec) -> NotifTemplate {
         NotifTemplate(title: spec.title, subtitle: spec.subtitle, body: spec.body,
-                      personaID: spec.persona, weight: spec.weight, isRare: spec.isRare)
+                      personaID: spec.persona, weight: spec.weight, isRare: spec.isRare,
+                      onlyAsFollowUp: spec.onlyAsFollowUp)
+    }
+
+    /// Retrouve l'exemple dans les modèles existants (une suite se reconnaît aussi à son texte).
+    private static func find(_ spec: Spec, in templates: [NotifTemplate]) -> Int? {
+        templates.firstIndex { t in
+            t.title == spec.title && (spec.onlyAsFollowUp ? t.body == spec.body : !t.onlyAsFollowUp)
+        }
     }
 
     /// Modèles d'exemple d'une nouvelle installation.
     static func makeTemplates() -> [NotifTemplate] {
-        specs.map(make)
+        var templates: [NotifTemplate] = []
+        var configs: [SendConfig] = []
+        merge(templates: &templates, configs: &configs)
+        return templates
     }
 
     static var configs: [SendConfig] {
@@ -89,12 +107,24 @@ enum Presets {
     /// Renvoie l'identifiant de la première configuration ajoutée, s'il y en a une.
     @discardableResult
     static func merge(templates: inout [NotifTemplate], configs: inout [SendConfig]) -> UUID? {
+        var ids: [String: UUID] = [:]
         for spec in specs {
-            if let i = templates.firstIndex(where: { $0.title == spec.title }) {
+            let index: Int
+            if let i = find(spec, in: templates) {
                 if templates[i].personaID == nil { templates[i].personaID = spec.persona }
+                index = i
             } else {
                 templates.append(make(spec))
+                index = templates.count - 1
             }
+            if let key = spec.key { ids[key] = templates[index].id }
+        }
+        // Cascades des exemples (sans écraser une suite déjà choisie)
+        for spec in specs {
+            guard let followKey = spec.followUp, let target = ids[followKey],
+                  let i = find(spec, in: templates), templates[i].followUpID == nil else { continue }
+            templates[i].followUpID = target
+            templates[i].followUpDelay = spec.followUpDelay
         }
         let missing = Self.configs.filter { preset in !configs.contains { $0.name == preset.name } }
         configs.append(contentsOf: missing)

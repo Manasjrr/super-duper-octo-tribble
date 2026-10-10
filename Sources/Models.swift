@@ -11,6 +11,10 @@ struct NotifTemplate: Identifiable, Codable, Hashable {
     var personaID: String? = nil    // appli expéditrice (nil = Nova)
     var weight: Double = 1          // poids relatif pour le tirage
     var isRare = false              // n'apparaît qu'avec la « chance de rare » de la config
+    var maxPerRun = 0               // apparitions max. par scénario (0 = illimité, 1 = pas de doublon)
+    var followUpID: UUID? = nil     // cascade : modèle envoyé automatiquement après celui-ci
+    var followUpDelay: Double = 10  // secondes avant la suite
+    var onlyAsFollowUp = false      // jamais tiré au sort seul, uniquement en suite d'un autre
 
     var displayTitle: String {
         let t = title.trimmingCharacters(in: .whitespaces)
@@ -65,6 +69,7 @@ struct SendConfig: Identifiable, Codable, Hashable {
     var mixContent = false              // mélange titres et textes entre modèles
     var rareChance: Double = 0.05
     var templateIDs: [UUID] = []        // vide = tous les modèles
+    var noDuplicates = false            // chaque modèle au plus une fois par scénario
 }
 
 // MARK: - Scénario en cours
@@ -140,6 +145,10 @@ extension NotifTemplate {
         personaID = try? c.decodeIfPresent(String.self, forKey: .personaID)
         weight = c.value(.weight, weight)
         isRare = c.value(.isRare, isRare)
+        maxPerRun = c.value(.maxPerRun, maxPerRun)
+        followUpID = try? c.decodeIfPresent(UUID.self, forKey: .followUpID)
+        followUpDelay = c.value(.followUpDelay, followUpDelay)
+        onlyAsFollowUp = c.value(.onlyAsFollowUp, onlyAsFollowUp)
     }
 }
 
@@ -162,5 +171,6 @@ extension SendConfig {
         mixContent = c.value(.mixContent, mixContent)
         rareChance = c.value(.rareChance, rareChance)
         templateIDs = c.value(.templateIDs, templateIDs)
+        noDuplicates = c.value(.noDuplicates, noDuplicates)
     }
 }

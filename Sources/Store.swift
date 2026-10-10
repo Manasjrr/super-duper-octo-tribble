@@ -147,6 +147,9 @@ final class AppStore: ObservableObject {
 
     func deleteTemplate(_ t: NotifTemplate) {
         templates.removeAll { $0.id == t.id }
+        for i in templates.indices where templates[i].followUpID == t.id {
+            templates[i].followUpID = nil
+        }
         for i in configs.indices where configs[i].templateIDs.contains(t.id) {
             configs[i].templateIDs.removeAll { $0 == t.id }
         }
@@ -213,7 +216,7 @@ final class AppStore: ObservableObject {
 
     /// Modèles utilisés par une config (tous si aucune sélection).
     func pool(for config: SendConfig) -> [NotifTemplate] {
-        let usable = templates.filter { !$0.isEmpty }
+        let usable = templates.filter { !$0.isEmpty && !$0.onlyAsFollowUp }
         let selected = usable.filter { config.templateIDs.contains($0.id) }
         return selected.isEmpty ? usable : selected
     }
@@ -233,18 +236,49 @@ final class AppStore: ObservableObject {
         }
         if run?.isActive == true { stop() }
 
+        // Sans doublon, il peut y avoir moins de modèles disponibles que de notifications demandées :
+        // on répartit alors ceux qui restent sur toute la durée.
+        var plannedConfig = config
+        if let capacity = ContentPicker.capacity(pool: pool, config: config) {
+            plannedConfig.count = max(1, min(config.count, capacity))
+        }
         var picker = ContentPicker(pool: pool, config: config)
         let now = Date()
-        let items: [PlannedNotif] = Planner.offsets(for: config).compactMap { offset in
-            guard let t = picker.next() else { return nil }
-            return PlannedNotif(fireDate: now.addingTimeInterval(offset),
-                                title: t.displayTitle, subtitle: t.subtitle, body: t.body,
-                                personaID: t.personaID, isRare: t.isRare)
+        var items: [PlannedNotif] = []
+        for offset in Planner.offsets(for: plannedConfig) {
+            guard let t = picker.next() else { break }
+            items.append(planned(t, at: now.addingTimeInterval(offset)))
+            // Cascade : les suites arrivent toujours après la notification qui les déclenche
+            for (next, delay) in followUps(of: t) {
+                items.append(planned(next, at: now.addingTimeInterval(offset + delay)))
+            }
         }
+        items.sort { $0.fireDate < $1.fireDate }
         KeepAlive.shared.start()
         message = nil
         run = Run(configName: config.name, items: items, plannedCount: items.count)
         tick()
+    }
+
+    private func planned(_ t: NotifTemplate, at date: Date) -> PlannedNotif {
+        PlannedNotif(fireDate: date, title: t.displayTitle, subtitle: t.subtitle, body: t.body,
+                     personaID: t.personaID, isRare: t.isRare)
+    }
+
+    /// Suites d'un modèle (cascade), avec leur délai cumulé. 5 niveaux au plus, sans boucle.
+    func followUps(of t: NotifTemplate) -> [(NotifTemplate, Double)] {
+        var result: [(NotifTemplate, Double)] = []
+        var seen: Set<UUID> = [t.id]
+        var current = t
+        var delay = 0.0
+        while result.count < 5, let nextID = current.followUpID, !seen.contains(nextID),
+              let next = templates.first(where: { $0.id == nextID }), !next.isEmpty {
+            delay += max(1, current.followUpDelay)
+            result.append((next, delay))
+            seen.insert(nextID)
+            current = next
+        }
+        return result
     }
 
     func pause() {
@@ -350,10 +384,21 @@ final class AppStore: ObservableObject {
             message = "Aucun modèle à tester."
             return
         }
+        sendTestNow(t)
+        // Cascade : les suites partent aussi (Nova doit rester ouverte pendant le délai)
+        for (next, delay) in followUps(of: t) {
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                self?.sendTestNow(next)
+            }
+        }
+        message = nil
+    }
+
+    private func sendTestNow(_ t: NotifTemplate) {
         send(title: t.displayTitle, subtitle: t.subtitle, body: t.body, personaID: t.personaID)
         addHistory([HistoryEntry(date: Date(), title: t.displayTitle, body: t.body,
                                  personaID: t.personaID ?? WebPersonas.defaultSender, isTest: true, isRare: t.isRare)])
-        message = nil
     }
 
     private func addHistory(_ entries: [HistoryEntry]) {

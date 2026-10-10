@@ -100,22 +100,45 @@ enum Planner {
     }
 }
 
-// Tire les messages un par un selon les réglages de la config.
+// Tire les modèles un par un selon les réglages de la config.
 struct ContentPicker {
     let pool: [NotifTemplate]
     let config: SendConfig
     private var lastID: UUID?
     private var cursor = 0
+    private var used: [UUID: Int] = [:]     // apparitions de chaque modèle dans ce scénario
 
     init(pool: [NotifTemplate], config: SendConfig) {
         self.pool = pool
         self.config = config
     }
 
+    /// Nombre max. d'apparitions d'un modèle dans un scénario (nil = illimité).
+    static func limit(of t: NotifTemplate, config: SendConfig) -> Int? {
+        if config.noDuplicates { return 1 }
+        return t.maxPerRun > 0 ? t.maxPerRun : nil
+    }
+
+    /// Nombre total de notifications possibles avec ces modèles (nil = illimité).
+    static func capacity(pool: [NotifTemplate], config: SendConfig) -> Int? {
+        var total = 0
+        for t in pool {
+            guard let l = limit(of: t, config: config) else { return nil }
+            total += l
+        }
+        return total
+    }
+
+    private func isAvailable(_ t: NotifTemplate) -> Bool {
+        guard let l = Self.limit(of: t, config: config) else { return true }
+        return used[t.id, default: 0] < l
+    }
+
     mutating func next() -> NotifTemplate? {
-        let normal = pool.filter { !$0.isRare }
-        let rare = pool.filter { $0.isRare }
-        guard !pool.isEmpty else { return nil }
+        let allNormal = pool.filter { !$0.isRare }
+        let normal = allNormal.filter { isAvailable($0) }
+        let rare = pool.filter { $0.isRare && isAvailable($0) }
+        guard !normal.isEmpty || !rare.isEmpty else { return nil }
 
         let useRare = !rare.isEmpty && (normal.isEmpty || Double.random(in: 0..<1) < config.rareChance)
         var pick: NotifTemplate
@@ -125,12 +148,21 @@ struct ContentPicker {
         } else if config.randomPick {
             pick = Self.weighted(withoutLast(normal))
         } else {
-            pick = normal[cursor % normal.count]
-            cursor += 1
+            // Dans l'ordre de la liste, en sautant les modèles épuisés
+            pick = normal[0]
+            for _ in 0..<allNormal.count {
+                let candidate = allNormal[cursor % allNormal.count]
+                cursor += 1
+                if isAvailable(candidate) {
+                    pick = candidate
+                    break
+                }
+            }
         }
+        used[pick.id, default: 0] += 1
 
         if config.mixContent && !pick.isRare,
-           let b = normal.filter({ !$0.body.isEmpty }).randomElement() {
+           let b = allNormal.filter({ !$0.body.isEmpty }).randomElement() {
             pick.body = b.body
         }
 
