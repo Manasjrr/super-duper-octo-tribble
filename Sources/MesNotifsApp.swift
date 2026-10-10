@@ -5,6 +5,10 @@ import UserNotifications
 struct MesNotifsApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
+    init() {
+        BW.applyUIKitAppearance()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -22,6 +26,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+        [.banner, .list, .sound]
     }
 }
