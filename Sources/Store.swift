@@ -248,21 +248,22 @@ final class AppStore: ObservableObject {
         for offset in Planner.offsets(for: plannedConfig) {
             guard let t = picker.next() else { break }
             items.append(planned(t, at: now.addingTimeInterval(offset)))
-            // Cascade : les suites arrivent toujours après la notification qui les déclenche
+            // Cascade : les suites arrivent toujours après la notification qui les déclenche,
+            // depuis la même appli expéditrice
             for (next, delay) in followUps(of: t) {
-                items.append(planned(next, at: now.addingTimeInterval(offset + delay)))
+                items.append(planned(next, at: now.addingTimeInterval(offset + delay), personaID: t.personaID))
             }
         }
         items.sort { $0.fireDate < $1.fireDate }
-        KeepAlive.shared.start()
+        KeepAlive.shared.start(.scenario)
         message = nil
         run = Run(configName: config.name, items: items, plannedCount: items.count)
         tick()
     }
 
-    private func planned(_ t: NotifTemplate, at date: Date) -> PlannedNotif {
+    private func planned(_ t: NotifTemplate, at date: Date, personaID: String?? = nil) -> PlannedNotif {
         PlannedNotif(fireDate: date, title: t.displayTitle, subtitle: t.subtitle, body: t.body,
-                     personaID: t.personaID, isRare: t.isRare)
+                     personaID: personaID ?? t.personaID, isRare: t.isRare)
     }
 
     /// Suites d'un modèle (cascade), avec leur délai cumulé. 5 niveaux au plus, sans boucle.
@@ -286,7 +287,7 @@ final class AppStore: ObservableObject {
         r.status = .paused
         r.pausedAt = Date()
         run = r
-        KeepAlive.shared.stop()
+        KeepAlive.shared.stop(.scenario)
     }
 
     func resume() {
@@ -298,7 +299,7 @@ final class AppStore: ObservableObject {
         r.status = .running
         r.pausedAt = nil
         run = r
-        KeepAlive.shared.start()
+        KeepAlive.shared.start(.scenario)
         tick()
     }
 
@@ -310,7 +311,7 @@ final class AppStore: ObservableObject {
         r.pausedAt = nil
         r.endedAt = Date()
         run = r
-        KeepAlive.shared.stop()
+        KeepAlive.shared.stop(.scenario)
         tick()
     }
 
@@ -346,7 +347,7 @@ final class AppStore: ObservableObject {
         if r.status == .running && r.items.allSatisfy({ $0.scheduled && $0.fireDate <= now }) {
             r.status = .finished
             r.endedAt = r.items.last?.fireDate ?? now
-            KeepAlive.shared.stop()
+            KeepAlive.shared.stop(.scenario)
         }
 
         if r != run { run = r }
@@ -384,21 +385,31 @@ final class AppStore: ObservableObject {
             message = "Aucun modèle à tester."
             return
         }
-        sendTestNow(t)
-        // Cascade : les suites partent aussi (Nova doit rester ouverte pendant le délai)
-        for (next, delay) in followUps(of: t) {
+        sendTestNow(t, personaID: t.personaID)
+        message = nil
+
+        // Cascade : les suites partent aussi, depuis la même appli, même si le téléphone est verrouillé.
+        // Nova reste active (localisation + temps d'arrière-plan) jusqu'à la dernière.
+        let chain = followUps(of: t)
+        guard let last = chain.last?.1 else { return }
+        KeepAlive.shared.start(.test)
+        let task = UIApplication.shared.beginBackgroundTask(withName: "cascade", expirationHandler: nil)
+        for (next, delay) in chain {
             Task { [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                self?.sendTestNow(next)
+                self?.sendTestNow(next, personaID: t.personaID)
+                if delay >= last {
+                    KeepAlive.shared.stop(.test)
+                    UIApplication.shared.endBackgroundTask(task)
+                }
             }
         }
-        message = nil
     }
 
-    private func sendTestNow(_ t: NotifTemplate) {
-        send(title: t.displayTitle, subtitle: t.subtitle, body: t.body, personaID: t.personaID)
+    private func sendTestNow(_ t: NotifTemplate, personaID: String?) {
+        send(title: t.displayTitle, subtitle: t.subtitle, body: t.body, personaID: personaID)
         addHistory([HistoryEntry(date: Date(), title: t.displayTitle, body: t.body,
-                                 personaID: t.personaID ?? WebPersonas.defaultSender, isTest: true, isRare: t.isRare)])
+                                 personaID: personaID ?? WebPersonas.defaultSender, isTest: true, isRare: t.isRare)])
     }
 
     private func addHistory(_ entries: [HistoryEntry]) {

@@ -20,6 +20,7 @@ struct ContentView: View {
         .preferredColorScheme(.dark)
         .task {
             await store.requestNotificationPermission()
+            KeepAlive.shared.requestPermission()
             store.resetAppIconIfNeeded()
             store.tick()
         }

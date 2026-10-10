@@ -293,7 +293,7 @@ struct TemplateEditor: View {
                 } header: {
                     Text("Cascade")
                 } footer: {
-                    Text("Notification suivante : envoyée automatiquement après celle-ci, à chaque fois. « Uniquement en suite » : ce modèle n'est jamais tiré au sort seul, il n'arrive qu'à la suite d'un autre.")
+                    Text("Notification suivante : envoyée automatiquement après celle-ci, à chaque fois, depuis la même appli expéditrice. « Uniquement en suite » : ce modèle n'est jamais tiré au sort seul, il n'arrive qu'à la suite d'un autre.")
                 }
                 .listRowBackground(BW.hull)
 

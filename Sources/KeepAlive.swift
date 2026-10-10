@@ -9,8 +9,11 @@ import CoreLocation
 final class KeepAlive: NSObject, CLLocationManagerDelegate {
     static let shared = KeepAlive()
 
+    /// Raisons de rester active (scénario en cours, test en cascade…) : on s'arrête quand il n'y en a plus.
+    enum Reason: Hashable { case scenario, test }
+
     private let manager = CLLocationManager()
-    private var wanted = false
+    private var reasons: Set<Reason> = []
 
     override init() {
         super.init()
@@ -26,23 +29,29 @@ final class KeepAlive: NSObject, CLLocationManagerDelegate {
         return status == .denied || status == .restricted
     }
 
-    func start() {
-        wanted = true
+    /// Demande l'autorisation dès le lancement, pour qu'elle soit prête au premier scénario.
+    func requestPermission() {
         if manager.authorizationStatus == .notDetermined {
             manager.requestWhenInUseAuthorization()
         }
+    }
+
+    func start(_ reason: Reason) {
+        reasons.insert(reason)
+        requestPermission()
         begin()
     }
 
-    func stop() {
-        wanted = false
+    func stop(_ reason: Reason) {
+        reasons.remove(reason)
+        guard reasons.isEmpty else { return }
         manager.stopUpdatingLocation()
         manager.allowsBackgroundLocationUpdates = false
     }
 
     private func begin() {
         let status = manager.authorizationStatus
-        guard wanted, status == .authorizedWhenInUse || status == .authorizedAlways else { return }
+        guard !reasons.isEmpty, status == .authorizedWhenInUse || status == .authorizedAlways else { return }
         manager.allowsBackgroundLocationUpdates = true
         manager.showsBackgroundLocationIndicator = true
         manager.startUpdatingLocation()
