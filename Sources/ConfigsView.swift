@@ -155,6 +155,21 @@ struct ConfigEditor: View {
             .listRowBackground(BW.hull)
 
             Section {
+                Picker("Affichage", selection: $config.liveActivity) {
+                    Text("Notifications").tag(false)
+                    Text("Activité en direct").tag(true)
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("Affichage")
+            } footer: {
+                Text(verbatim: config.liveActivity
+                     ? "Chaque envoi s'affiche dans une Activité en direct dessinée comme une notification, avec l'icône ronde de chaque modèle (sans autorisation Apple). Nova reste active en arrière-plan grâce à la localisation (flèche bleue, batterie davantage sollicitée). Ne ferme pas Nova depuis le sélecteur d'apps pendant le scénario. Les envois remplacent la même carte au lieu de s'empiler."
+                     : "Notifications iOS classiques : elles s'empilent et arrivent même si Nova est fermée, mais avec l'icône de l'app (ou l'« Icône de l'app » choisie ci-dessous).")
+            }
+            .listRowBackground(BW.hull)
+
+            Section {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 14) {
                         ForEach(AppIcons.choices) { choice in

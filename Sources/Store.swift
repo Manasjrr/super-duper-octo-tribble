@@ -40,6 +40,7 @@ final class AppStore: ObservableObject {
     @Published var message: String?
 
     private var loading = true
+    private var timer: Timer?
     private let fileURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("etat.json")
 
@@ -61,6 +62,13 @@ final class AppStore: ObservableObject {
         }
         loading = false
         save()
+
+        // Horloge interne : tourne aussi en arrière-plan quand Nova est maintenue active.
+        let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
     private func save() {
@@ -202,8 +210,13 @@ final class AppStore: ObservableObject {
                                 title: t.displayTitle, subtitle: t.subtitle, body: t.body,
                                 imageFile: t.imageFile, iconFile: t.iconFile, isRare: t.isRare)
         }
+        if config.liveActivity, let error = LiveMode.start(configName: config.name, total: items.count) {
+            message = error
+            return
+        }
         message = nil
-        run = Run(configName: config.name, items: items, plannedCount: items.count)
+        run = Run(configName: config.name, items: items, plannedCount: items.count,
+                  live: config.liveActivity ? true : nil)
         tick()
         AppIcons.apply(config.appIcon) { [weak self] error in
             if let error { self?.message = "Icône de l'app non changée : \(error)" }
@@ -220,6 +233,7 @@ final class AppStore: ObservableObject {
         r.status = .paused
         r.pausedAt = now
         run = r
+        if r.isLive { LiveMode.pause() }
     }
 
     func resume() {
@@ -231,6 +245,7 @@ final class AppStore: ObservableObject {
         r.status = .running
         r.pausedAt = nil
         run = r
+        if r.isLive { LiveMode.resume() }
         tick()
     }
 
@@ -243,6 +258,7 @@ final class AppStore: ObservableObject {
         r.pausedAt = nil
         r.endedAt = Date()
         run = r
+        if r.isLive { LiveMode.end(immediately: true) }
         tick()
     }
 
@@ -256,7 +272,14 @@ final class AppStore: ObservableObject {
         guard var r = run else { return }
         let now = Date()
 
-        if r.status == .running {
+        if r.status == .running && r.isLive {
+            // Activité en direct : on « livre » les envois arrivés à échéance (le dernier est affiché).
+            let due = r.items.indices.filter { !r.items[$0].scheduled && r.items[$0].fireDate <= now }
+            if let last = due.last {
+                for i in due { r.items[i].scheduled = true }
+                LiveMode.show(r.items[last], sent: r.sent(at: now), total: r.plannedCount)
+            }
+        } else if r.status == .running {
             // Des notifs non programmées sont passées (app fermée trop longtemps) : on décale la suite.
             if let idx = r.items.firstIndex(where: { !$0.scheduled && $0.fireDate <= now }) {
                 let delta = now.addingTimeInterval(2).timeIntervalSince(r.items[idx].fireDate)
@@ -288,6 +311,7 @@ final class AppStore: ObservableObject {
         if r.status == .running && r.items.allSatisfy({ $0.scheduled && $0.fireDate <= now }) {
             r.status = .finished
             r.endedAt = r.items.last?.fireDate ?? now
+            if r.isLive { LiveMode.end(immediately: false) }
         }
 
         if r != run { run = r }
@@ -452,6 +476,22 @@ enum ImageStore {
         guard let image = UIImage(contentsOfFile: url(name).path) else { return nil }
         cache.setObject(image, forKey: name as NSString)
         return image
+    }
+
+    /// Vignette carrée très légère (pour les Activités en direct, limitées à 4 Ko).
+    static func thumbnailData(_ name: String?, side: CGFloat) -> Data? {
+        guard let image = load(name), image.size.width > 0, image.size.height > 0 else { return nil }
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let size = CGSize(width: side, height: side)
+        let scale = max(side / image.size.width, side / image.size.height)
+        let drawn = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let thumb = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(x: (side - drawn.width) / 2, y: (side - drawn.height) / 2,
+                                  width: drawn.width, height: drawn.height))
+        }
+        return thumb.jpegData(compressionQuality: 0.6)
     }
 
     static func data(_ name: String) -> Data? {

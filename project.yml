@@ -2,7 +2,7 @@ name: Nova
 options:
   bundleIdPrefix: com.manas
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "16.2"
 targets:
   Nova:
     type: application
@@ -17,14 +17,37 @@ targets:
         UILaunchScreen: {}
         UIUserInterfaceStyle: Dark
         NSUserActivityTypes: [INSendMessageIntent]
+        NSSupportsLiveActivities: true
+        UIBackgroundModes: [location]
+        NSLocationWhenInUseUsageDescription: "Nova utilise la localisation uniquement pour rester active en arrière-plan pendant un scénario en mode Activité en direct. Ta position n'est ni enregistrée ni envoyée."
     entitlements:
       path: Sources/Nova.entitlements
       properties:
         com.apple.developer.usernotifications.communication: true
+    dependencies:
+      - target: NovaLiveActivity
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.manas.nova
         SWIFT_VERSION: "5.0"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
+        TARGETED_DEVICE_FAMILY: "1"
+
+  NovaLiveActivity:
+    type: app-extension
+    platform: iOS
+    sources: [LiveActivity, Sources/Shared]
+    info:
+      path: LiveActivity/Info.plist
+      properties:
+        CFBundleDisplayName: Nova
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.manas.nova.liveactivity
+        SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"

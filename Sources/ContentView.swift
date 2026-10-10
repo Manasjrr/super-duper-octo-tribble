@@ -4,7 +4,6 @@ import UserNotifications
 struct ContentView: View {
     @StateObject private var store = AppStore()
     @Environment(\.scenePhase) private var scenePhase
-    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         TabView {
@@ -25,7 +24,6 @@ struct ContentView: View {
             await store.requestAuthorization()
             store.tick()
         }
-        .onReceive(timer) { _ in store.tick() }
         .onChange(of: scenePhase) { phase in
             guard phase == .active else { return }
             store.tick()
@@ -107,7 +105,7 @@ private struct IconWarning: View {
             Label("Icônes personnalisées indisponibles", systemImage: "person.crop.circle.badge.exclamationmark")
                 .font(BW.font(.headline, .semibold))
                 .foregroundStyle(BW.gold)
-            Text("Cette installation n'a pas reçu l'autorisation « Communication Notifications » d'Apple : iOS n'affiche pas une icône différente par notification. Solution : choisis une « Icône de l'app » dans la configuration. Toutes les notifications du scénario prendront cette icône.")
+            Text("Cette installation n'a pas reçu l'autorisation « Communication Notifications » (réservée aux comptes Apple payants) : iOS n'affiche pas une icône différente par notification. Deux solutions dans Configurations : l'affichage « Activité en direct » (une icône par envoi), ou une « Icône de l'app » pour tout le scénario.")
                 .font(.footnote)
                 .foregroundStyle(BW.mist)
         }

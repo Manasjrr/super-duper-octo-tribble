@@ -67,6 +67,7 @@ struct SendConfig: Identifiable, Codable, Hashable {
     var rareChance: Double = 0.05
     var templateIDs: [UUID] = []        // vide = tous les messages
     var appIcon: String? = nil          // icône alternative de l'app pendant le scénario (nil = Nova)
+    var liveActivity = false            // affichage en Activité en direct (icônes libres)
 }
 
 // MARK: - Scénario en cours
@@ -96,8 +97,10 @@ struct Run: Codable, Equatable {
     var startedAt = Date()
     var pausedAt: Date? = nil
     var endedAt: Date? = nil
+    var live: Bool? = nil   // scénario affiché en Activité en direct
 
     var isActive: Bool { status == .running || status == .paused }
+    var isLive: Bool { live == true }
 
     func sent(at now: Date) -> Int {
         let ref = pausedAt ?? now
@@ -168,5 +171,6 @@ extension SendConfig {
         rareChance = c.value(.rareChance, rareChance)
         templateIDs = c.value(.templateIDs, templateIDs)
         appIcon = try? c.decodeIfPresent(String.self, forKey: .appIcon)
+        liveActivity = c.value(.liveActivity, liveActivity)
     }
 }
