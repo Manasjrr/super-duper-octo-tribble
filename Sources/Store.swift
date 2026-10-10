@@ -101,7 +101,11 @@ final class AppStore: ObservableObject {
 
         var t = templates
         var c = configs
-        if let added = Presets.merge(templates: &t, configs: &c), stored < 2 { activeConfigID = added }
+        // Seuls les exemples apparus depuis la dernière version sont ajoutés : un exemple supprimé ne revient pas
+        if let added = Presets.merge(templates: &t, configs: &c, newerThan: stored, includeConfigs: stored < 3),
+           stored < 2 {
+            activeConfigID = added
+        }
         templates = t
         configs = c
         UserDefaults.standard.set(Presets.version, forKey: key)
@@ -152,6 +156,18 @@ final class AppStore: ObservableObject {
         }
         for i in configs.indices where configs[i].templateIDs.contains(t.id) {
             configs[i].templateIDs.removeAll { $0 == t.id }
+        }
+    }
+
+    /// Réordonne une partie de la liste (une catégorie) sans toucher à la place des autres modèles.
+    func moveTemplates(_ subset: [NotifTemplate], from source: IndexSet, to destination: Int) {
+        var ordered = subset
+        ordered.move(fromOffsets: source, toOffset: destination)
+        let ids = Set(subset.map(\.id))
+        var queue = ordered[...]
+        templates = templates.map { t in
+            guard ids.contains(t.id), let next = queue.popFirst() else { return t }
+            return next
         }
     }
 

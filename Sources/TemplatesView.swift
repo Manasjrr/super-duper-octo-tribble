@@ -5,8 +5,12 @@ import SwiftUI
 struct TemplatesView: View {
     @EnvironmentObject var store: AppStore
     @State private var editing: NotifTemplate?
+    @State private var search = ""
 
     var body: some View {
+        let main = store.templates.filter { !$0.onlyAsFollowUp && matches($0) }
+        let suites = store.templates.filter { $0.onlyAsFollowUp && matches($0) }
+
         NavigationStack {
             List {
                 if store.templates.isEmpty {
@@ -14,36 +18,30 @@ struct TemplatesView: View {
                         .foregroundStyle(BW.mist)
                         .listRowBackground(BW.hull)
                 }
-                ForEach(store.templates) { t in
-                    Button { editing = t } label: { TemplateRow(template: t) }
-                        .listRowBackground(BW.hull)
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) { store.deleteTemplate(t) } label: {
-                                Label("Supprimer", systemImage: "trash")
-                            }
-                            Button { store.duplicateTemplate(t) } label: {
-                                Label("Dupliquer", systemImage: "doc.on.doc")
-                            }
-                            .tint(BW.sea)
-                        }
-                        .swipeActions(edge: .leading) {
-                            Button { store.sendTest(t) } label: {
-                                Label("Tester", systemImage: "bell.fill")
-                            }
-                            .tint(BW.gold)
-                        }
-                        .contextMenu {
-                            Button { store.sendTest(t) } label: { Label("Tester", systemImage: "bell.fill") }
-                            Button { editing = t } label: { Label("Modifier", systemImage: "pencil") }
-                            Button { store.duplicateTemplate(t) } label: { Label("Dupliquer", systemImage: "doc.on.doc") }
-                            Button(role: .destructive) { store.deleteTemplate(t) } label: {
-                                Label("Supprimer", systemImage: "trash")
-                            }
-                        }
+                if !main.isEmpty {
+                    Section {
+                        rows(main)
+                    } header: {
+                        Text("Notifications · \(main.count)")
+                    }
                 }
-                .onMove { store.templates.move(fromOffsets: $0, toOffset: $1) }
+                if !suites.isEmpty || search.isEmpty {
+                    Section {
+                        if suites.isEmpty {
+                            Text("Aucune suite pour l'instant.")
+                                .foregroundStyle(BW.mist)
+                                .listRowBackground(BW.hull)
+                        }
+                        rows(suites)
+                    } header: {
+                        Text("Suites · cascade uniquement · \(suites.count)")
+                    } footer: {
+                        Text("Une suite n'est jamais tirée au sort : elle arrive seulement après la notification qui la déclenche (section Cascade d'un modèle).")
+                    }
+                }
             }
             .bwForm()
+            .searchable(text: $search, prompt: "Rechercher un modèle")
             .navigationTitle("Modèles")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -51,13 +49,68 @@ struct TemplatesView: View {
                     EditButton()
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { editing = NotifTemplate() } label: { Image(systemName: "plus") }
+                    Menu {
+                        Button { editing = NotifTemplate() } label: {
+                            Label("Nouvelle notification", systemImage: "bell")
+                        }
+                        Button {
+                            var suite = NotifTemplate()
+                            suite.onlyAsFollowUp = true
+                            editing = suite
+                        } label: {
+                            Label("Nouvelle suite (cascade)", systemImage: "arrow.turn.down.right")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
             .sheet(item: $editing) { t in
                 TemplateEditor(original: t, isNew: !store.templates.contains { $0.id == t.id })
             }
         }
+    }
+
+    private func matches(_ t: NotifTemplate) -> Bool {
+        let query = search.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return true }
+        let sender = WebPersonas.slot(t.personaID ?? WebPersonas.defaultSender)?.label ?? ""
+        return [t.displayTitle, t.subtitle, t.body, sender].contains { $0.localizedCaseInsensitiveContains(query) }
+    }
+
+    @ViewBuilder private func rows(_ list: [NotifTemplate]) -> some View {
+        // Réordonner seulement hors recherche, à l'intérieur de chaque catégorie
+        let move: ((IndexSet, Int) -> Void)? = search.isEmpty
+            ? { from, to in store.moveTemplates(list, from: from, to: to) }
+            : nil
+        ForEach(list) { t in
+            Button { editing = t } label: { TemplateRow(template: t) }
+                .listRowBackground(BW.hull)
+                .swipeActions(edge: .trailing) {
+                    Button(role: .destructive) { store.deleteTemplate(t) } label: {
+                        Label("Supprimer", systemImage: "trash")
+                    }
+                    Button { store.duplicateTemplate(t) } label: {
+                        Label("Dupliquer", systemImage: "doc.on.doc")
+                    }
+                    .tint(BW.sea)
+                }
+                .swipeActions(edge: .leading) {
+                    Button { store.sendTest(t) } label: {
+                        Label("Tester", systemImage: "bell.fill")
+                    }
+                    .tint(BW.gold)
+                }
+                .contextMenu {
+                    Button { store.sendTest(t) } label: { Label("Tester", systemImage: "bell.fill") }
+                    Button { editing = t } label: { Label("Modifier", systemImage: "pencil") }
+                    Button { store.duplicateTemplate(t) } label: { Label("Dupliquer", systemImage: "doc.on.doc") }
+                    Button(role: .destructive) { store.deleteTemplate(t) } label: {
+                        Label("Supprimer", systemImage: "trash")
+                    }
+                }
+        }
+        .onMove(perform: move)
     }
 }
 
@@ -183,13 +236,16 @@ struct TemplateEditor: View {
 
     let original: NotifTemplate
     let isNew: Bool
+    var onSave: ((NotifTemplate) -> Void)? = nil
     @State private var draft: NotifTemplate
+    @State private var newFollowUp: NotifTemplate?
 
     private static let emojis = ["💬", "📷", "💳", "💰", "🔔", "✅", "⚠️", "🎉", "❤️", "⭐️", "📸", "🛒", "🔥", "👋"]
 
-    init(original: NotifTemplate, isNew: Bool) {
+    init(original: NotifTemplate, isNew: Bool, onSave: ((NotifTemplate) -> Void)? = nil) {
         self.original = original
         self.isNew = isNew
+        self.onSave = onSave
         _draft = State(initialValue: original)
     }
 
@@ -244,6 +300,7 @@ struct TemplateEditor: View {
                 }
                 .listRowBackground(BW.hull)
 
+                if !draft.onlyAsFollowUp {
                 Section {
                     Stepper(value: $draft.weight, in: 1...10, step: 1) {
                         HStack {
@@ -275,25 +332,38 @@ struct TemplateEditor: View {
                 } header: {
                     Text("Répartition")
                 } footer: {
-                    Text("« 1 fois » : cette notification n'apparaît qu'une seule fois par scénario, jamais en double. Pour l'appliquer à tous les modèles, active « Aucun doublon » dans la configuration.")
+                    Text("« 1 fois » (par défaut) : cette notification n'apparaît qu'une seule fois par scénario, jamais en double. « Illimité » : elle peut revenir plusieurs fois.")
                 }
                 .listRowBackground(BW.hull)
+                }
 
                 Section {
                     Picker("Notification suivante", selection: $draft.followUpID) {
                         Text("Aucune").tag(UUID?.none)
-                        ForEach(store.templates.filter { $0.id != draft.id && !$0.isEmpty }) { t in
-                            Text(t.displayTitle.isEmpty ? "Sans titre" : t.displayTitle).tag(Optional(t.id))
+                        ForEach(followUpCandidates.filter(\.onlyAsFollowUp)) { t in
+                            Text("↳ " + label(of: t)).tag(Optional(t.id))
+                        }
+                        ForEach(followUpCandidates.filter { !$0.onlyAsFollowUp }) { t in
+                            Text(label(of: t)).tag(Optional(t.id))
                         }
                     }
                     if draft.followUpID != nil {
                         DurationStepper(label: "Délai avant la suite", seconds: $draft.followUpDelay, range: 1...3600)
                     }
-                    Toggle("Uniquement en suite d'une autre", isOn: $draft.onlyAsFollowUp)
+                    Button {
+                        var suite = NotifTemplate()
+                        suite.title = draft.title
+                        suite.personaID = draft.personaID
+                        suite.onlyAsFollowUp = true
+                        newFollowUp = suite
+                    } label: {
+                        Label("Créer une nouvelle suite…", systemImage: "plus.circle")
+                    }
+                    Toggle("Ce modèle est une suite (cascade uniquement)", isOn: $draft.onlyAsFollowUp)
                 } header: {
                     Text("Cascade")
                 } footer: {
-                    Text("Notification suivante : envoyée automatiquement après celle-ci, à chaque fois, depuis la même appli expéditrice. « Uniquement en suite » : ce modèle n'est jamais tiré au sort seul, il n'arrive qu'à la suite d'un autre.")
+                    Text("Notification suivante : envoyée automatiquement après celle-ci, à chaque fois, depuis la même appli expéditrice (les suites sont marquées ↳). Une suite n'est jamais tirée au sort seule : elle est rangée dans la catégorie « Suites ».")
                 }
                 .listRowBackground(BW.hull)
 
@@ -306,7 +376,7 @@ struct TemplateEditor: View {
                 .listRowBackground(BW.hull)
             }
             .bwForm()
-            .navigationTitle(isNew ? "Nouveau modèle" : "Modifier")
+            .navigationTitle(isNew ? (draft.onlyAsFollowUp ? "Nouvelle suite" : "Nouveau modèle") : "Modifier")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -315,6 +385,7 @@ struct TemplateEditor: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Enregistrer") {
                         store.upsertTemplate(draft)
+                        onSave?(draft)
                         dismiss()
                     }
                     .disabled(draft.isEmpty)
@@ -322,6 +393,20 @@ struct TemplateEditor: View {
             }
         }
         .interactiveDismissDisabled(draft != original)
+        .sheet(item: $newFollowUp) { suite in
+            TemplateEditor(original: suite, isNew: true) { saved in
+                draft.followUpID = saved.id
+            }
+        }
+    }
+
+    private var followUpCandidates: [NotifTemplate] {
+        store.templates.filter { $0.id != draft.id && !$0.isEmpty }
+    }
+
+    private func label(of t: NotifTemplate) -> String {
+        let title = t.displayTitle.isEmpty ? "Sans titre" : t.displayTitle
+        return t.body.isEmpty ? title : title + " · " + t.body
     }
 
     private func senderLabel(_ id: String) -> String {

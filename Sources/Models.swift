@@ -11,7 +11,7 @@ struct NotifTemplate: Identifiable, Codable, Hashable {
     var personaID: String? = nil    // appli expéditrice (nil = Nova)
     var weight: Double = 1          // poids relatif pour le tirage
     var isRare = false              // n'apparaît qu'avec la « chance de rare » de la config
-    var maxPerRun = 0               // apparitions max. par scénario (0 = illimité, 1 = pas de doublon)
+    var maxPerRun = 1               // apparitions max. par scénario (0 = illimité, 1 = pas de doublon)
     var followUpID: UUID? = nil     // cascade : modèle envoyé automatiquement après celui-ci
     var followUpDelay: Double = 10  // secondes avant la suite
     var onlyAsFollowUp = false      // jamais tiré au sort seul, uniquement en suite d'un autre
@@ -145,7 +145,7 @@ extension NotifTemplate {
         personaID = try? c.decodeIfPresent(String.self, forKey: .personaID)
         weight = c.value(.weight, weight)
         isRare = c.value(.isRare, isRare)
-        maxPerRun = c.value(.maxPerRun, maxPerRun)
+        maxPerRun = c.value(.maxPerRun, 0)   // modèles d'avant ce réglage : illimités, comme avant
         followUpID = try? c.decodeIfPresent(UUID.self, forKey: .followUpID)
         followUpDelay = c.value(.followUpDelay, followUpDelay)
         onlyAsFollowUp = c.value(.onlyAsFollowUp, onlyAsFollowUp)
