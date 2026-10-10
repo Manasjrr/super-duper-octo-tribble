@@ -216,7 +216,7 @@ final class AppStore: ObservableObject {
         }
         message = nil
         run = Run(configName: config.name, items: items, plannedCount: items.count,
-                  live: config.liveActivity ? true : nil)
+                  live: config.liveActivity ? true : nil, liveArchive: config.liveArchive)
         tick()
         AppIcons.apply(config.appIcon) { [weak self] error in
             if let error { self?.message = "Icône de l'app non changée : \(error)" }
@@ -277,7 +277,8 @@ final class AppStore: ObservableObject {
             let due = r.items.indices.filter { !r.items[$0].scheduled && r.items[$0].fireDate <= now }
             if let last = due.last {
                 for i in due { r.items[i].scheduled = true }
-                LiveMode.show(r.items[last], sent: r.sent(at: now), total: r.plannedCount)
+                LiveMode.show(r.items[last], sent: r.sent(at: now), total: r.plannedCount,
+                              archive: r.liveArchive != false)
             }
         } else if r.status == .running {
             // Des notifs non programmées sont passées (app fermée trop longtemps) : on décale la suite.
@@ -349,12 +350,17 @@ final class AppStore: ObservableObject {
 
 enum Notifier {
     static func schedule(id: UUID, title: String, subtitle: String, body: String,
-                         imageFile: String?, iconFile: String?, at date: Date) {
+                         imageFile: String?, iconFile: String?, at date: Date, passive: Bool = false) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.subtitle = subtitle
         content.body = body
-        content.sound = .default
+        if passive {
+            // Rangée dans le centre de notifications sans son, sans vibration ni bannière
+            content.interruptionLevel = .passive
+        } else {
+            content.sound = .default
+        }
         if let attachment = ImageStore.attachment(imageFile) {
             content.attachments = [attachment]
         }
@@ -492,6 +498,19 @@ enum ImageStore {
                                   width: drawn.width, height: drawn.height))
         }
         return thumb.jpegData(compressionQuality: 0.6)
+    }
+
+    /// Réduit une vignette JPEG déjà encodée.
+    static func shrinkJPEG(_ data: Data?, side: CGFloat) -> Data? {
+        guard let data, let image = UIImage(data: data) else { return nil }
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let size = CGSize(width: side, height: side)
+        let small = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        return small.jpegData(compressionQuality: 0.5)
     }
 
     static func data(_ name: String) -> Data? {

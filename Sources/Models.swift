@@ -68,6 +68,7 @@ struct SendConfig: Identifiable, Codable, Hashable {
     var templateIDs: [UUID] = []        // vide = tous les messages
     var appIcon: String? = nil          // icône alternative de l'app pendant le scénario (nil = Nova)
     var liveActivity = false            // affichage en Activité en direct (icônes libres)
+    var liveArchive = true              // + copie silencieuse dans le centre de notifications
 }
 
 // MARK: - Scénario en cours
@@ -98,6 +99,7 @@ struct Run: Codable, Equatable {
     var pausedAt: Date? = nil
     var endedAt: Date? = nil
     var live: Bool? = nil   // scénario affiché en Activité en direct
+    var liveArchive: Bool? = nil
 
     var isActive: Bool { status == .running || status == .paused }
     var isLive: Bool { live == true }
@@ -172,5 +174,6 @@ extension SendConfig {
         templateIDs = c.value(.templateIDs, templateIDs)
         appIcon = try? c.decodeIfPresent(String.self, forKey: .appIcon)
         liveActivity = c.value(.liveActivity, liveActivity)
+        liveArchive = c.value(.liveArchive, liveArchive)
     }
 }

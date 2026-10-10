@@ -9,30 +9,30 @@ struct NovaWidgets: WidgetBundle {
     }
 }
 
-// Activité en direct dessinée comme une notification, avec une icône libre.
+// Activité en direct dessinée comme une pile de notifications, avec des icônes libres.
 struct NovaLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: NovaActivityAttributes.self) { context in
-            NotificationLikeView(state: context.state)
+            NotificationStackView(state: context.state)
                 .activityBackgroundTint(Color(red: 0.10, green: 0.11, blue: 0.13).opacity(0.88))
                 .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    ActivityIcon(data: context.state.iconData, size: 44)
+                    ActivityIcon(data: context.state.current.iconData, size: 44)
                         .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.center) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(context.state.title)
+                        Text(context.state.current.title)
                             .font(.subheadline.weight(.semibold))
                             .lineLimit(1)
-                        if !context.state.subtitle.isEmpty {
-                            Text(context.state.subtitle)
+                        if !context.state.current.subtitle.isEmpty {
+                            Text(context.state.current.subtitle)
                                 .font(.caption.weight(.medium))
                                 .lineLimit(1)
                         }
-                        Text(context.state.body)
+                        Text(context.state.current.body)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
@@ -40,46 +40,87 @@ struct NovaLiveActivity: Widget {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } compactLeading: {
-                ActivityIcon(data: context.state.iconData, size: 22)
+                ActivityIcon(data: context.state.current.iconData, size: 22)
             } compactTrailing: {
                 Text("\(context.state.sent)/\(context.state.total)")
                     .font(.caption2)
                     .monospacedDigit()
             } minimal: {
-                ActivityIcon(data: context.state.iconData, size: 22)
+                ActivityIcon(data: context.state.current.iconData, size: 22)
             }
         }
     }
 }
 
-struct NotificationLikeView: View {
+/// La dernière notification en grand, les précédentes en dessous en plus petit.
+struct NotificationStackView: View {
     let state: NovaActivityAttributes.ContentState
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            ActivityIcon(data: state.iconData, size: 40)
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(state.title)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    Text(state.date, style: .time)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if !state.subtitle.isEmpty {
-                    Text(state.subtitle)
-                        .font(.subheadline.weight(.medium))
-                        .lineLimit(1)
-                }
-                Text(state.body)
-                    .font(.subheadline)
-                    .lineLimit(3)
+        VStack(alignment: .leading, spacing: 8) {
+            MainRow(entry: state.current)
+            ForEach(Array(state.previous.prefix(2).enumerated()), id: \.offset) { index, entry in
+                Rectangle()
+                    .fill(Color.white.opacity(0.12))
+                    .frame(height: 0.5)
+                CompactRow(entry: entry)
+                    .opacity(index == 0 ? 0.85 : 0.65)
             }
         }
         .foregroundStyle(.white)
-        .padding(14)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+}
+
+private struct MainRow: View {
+    let entry: NovaActivityAttributes.Entry
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            ActivityIcon(data: entry.iconData, size: 38)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(entry.title)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(entry.date, style: .time)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if !entry.subtitle.isEmpty {
+                    Text(entry.subtitle)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                }
+                Text(entry.body)
+                    .font(.subheadline)
+                    .lineLimit(2)
+            }
+        }
+    }
+}
+
+private struct CompactRow: View {
+    let entry: NovaActivityAttributes.Entry
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            ActivityIcon(data: entry.iconData, size: 22)
+            Text(entry.title)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .layoutPriority(1)
+            Text(entry.body)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Text(entry.date, style: .time)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

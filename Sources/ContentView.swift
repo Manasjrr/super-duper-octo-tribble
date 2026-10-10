@@ -47,6 +47,9 @@ struct HomeView: View {
                     if IconSupport.current == .missing && store.templates.contains(where: { $0.iconFile != nil }) {
                         IconWarning()
                     }
+                    if store.activeConfig?.liveActivity == true || store.run?.isLive == true {
+                        LiveDiagnostics()
+                    }
                     if let run = store.run {
                         RunCard(run: run)
                             .transition(.opacity.combined(with: .move(edge: .top)))
@@ -110,6 +113,63 @@ private struct IconWarning: View {
                 .foregroundStyle(BW.mist)
         }
         .bwCard()
+    }
+}
+
+private struct LiveDiagnostics: View {
+    @EnvironmentObject var store: AppStore
+    @State private var expanded = false
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 2)) { _ in
+            let checks = LiveMode.diagnostics()
+            let allOK = checks.allSatisfy(\.ok)
+            VStack(alignment: .leading, spacing: 10) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                } label: {
+                    HStack {
+                        Label("Activité en direct", systemImage: allOK ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .font(BW.font(.headline, .semibold))
+                            .foregroundStyle(allOK ? BW.sea : BW.gold)
+                        Spacer()
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(.caption)
+                            .foregroundStyle(BW.mist)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                if expanded || !LiveMode.extensionInstalled {
+                    ForEach(checks) { check in
+                        HStack(alignment: .firstTextBaseline) {
+                            Image(systemName: check.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundStyle(check.ok ? BW.sea : BW.rust)
+                            Text(check.label)
+                            Spacer()
+                            Text(check.detail)
+                                .foregroundStyle(BW.mist)
+                                .multilineTextAlignment(.trailing)
+                        }
+                        .font(.footnote)
+                    }
+                    if !LiveMode.extensionInstalled {
+                        Text("Sans l'extension, iOS fait vibrer le téléphone mais n'a rien à afficher. Réinstalle Nova.ipa avec SideStore et, quand il demande quoi faire des extensions, choisis de les garder.")
+                            .font(.caption)
+                            .foregroundStyle(BW.gold)
+                    }
+                    Button {
+                        if let t = store.pool(for: store.activeConfig ?? SendConfig()).first {
+                            store.message = LiveMode.test(t)
+                        }
+                    } label: {
+                        Label("Afficher une activité de test", systemImage: "rectangle.badge.checkmark")
+                    }
+                    .buttonStyle(BWButtonStyle(filled: false))
+                }
+            }
+            .bwCard()
+        }
     }
 }
 

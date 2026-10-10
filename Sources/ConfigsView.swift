@@ -160,11 +160,14 @@ struct ConfigEditor: View {
                     Text("Activité en direct").tag(true)
                 }
                 .pickerStyle(.segmented)
+                if config.liveActivity {
+                    Toggle("Garder aussi dans le centre de notifications", isOn: $config.liveArchive)
+                }
             } header: {
                 Text("Affichage")
             } footer: {
                 Text(verbatim: config.liveActivity
-                     ? "Chaque envoi s'affiche dans une Activité en direct dessinée comme une notification, avec l'icône ronde de chaque modèle (sans autorisation Apple). Nova reste active en arrière-plan grâce à la localisation (flèche bleue, batterie davantage sollicitée). Ne ferme pas Nova depuis le sélecteur d'apps pendant le scénario. Les envois remplacent la même carte au lieu de s'empiler."
+                     ? "Chaque envoi s'affiche dans une Activité en direct dessinée comme une notification, avec l'icône ronde de chaque modèle (sans autorisation Apple). Nova reste active en arrière-plan grâce à la localisation (flèche bleue, batterie davantage sollicitée). Ne ferme pas Nova depuis le sélecteur d'apps pendant le scénario. La carte montre le dernier envoi et les 2 précédents. « Garder aussi » range chaque envoi en silence dans le centre de notifications (avec l'icône de l'app, limite d'iOS) pour ne rien perdre."
                      : "Notifications iOS classiques : elles s'empilent et arrivent même si Nova est fermée, mais avec l'icône de l'app (ou l'« Icône de l'app » choisie ci-dessous).")
             }
             .listRowBackground(BW.hull)
