@@ -8,7 +8,7 @@ struct HistoryView: View {
         NavigationStack {
             List {
                 if store.history.isEmpty {
-                    Text("Le journal de bord est vide. Les notifications envoyées apparaîtront ici.")
+                    Text("Aucune notification envoyée pour le moment.")
                         .foregroundStyle(BW.mist)
                         .listRowBackground(BW.hull)
                 }
@@ -18,14 +18,14 @@ struct HistoryView: View {
                 }
             }
             .bwForm()
-            .navigationTitle("Journal")
+            .navigationTitle("Historique")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Effacer") { confirmClear = true }
                         .disabled(store.history.isEmpty)
                 }
             }
-            .confirmationDialog("Effacer tout le journal ?", isPresented: $confirmClear, titleVisibility: .visible) {
+            .confirmationDialog("Effacer tout l'historique ?", isPresented: $confirmClear, titleVisibility: .visible) {
                 Button("Effacer", role: .destructive) { store.history.removeAll() }
             }
         }
@@ -37,10 +37,19 @@ private struct HistoryRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
+            if let icon = ImageStore.load(entry.iconFile) {
+                Image(uiImage: icon)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 36, height: 36)
+                    .clipShape(Circle())
+            } else {
+                AppEmblem(size: 36)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(entry.title.isEmpty ? "Sans titre" : entry.title)
-                        .font(BW.serif(.subheadline, .semibold))
+                        .font(BW.font(.subheadline, .semibold))
                         .foregroundStyle(BW.parchment)
                         .lineLimit(1)
                     if entry.isRare {

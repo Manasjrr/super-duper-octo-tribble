@@ -2,7 +2,7 @@ import SwiftUI
 import UserNotifications
 
 @main
-struct MesNotifsApp: App {
+struct NovaApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     init() {

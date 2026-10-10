@@ -14,8 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Installer XcodeGen
-        run: brew install xcodegen
+      - name: Installer XcodeGen et ldid
+        run: brew install xcodegen ldid
 
       - name: Générer le projet Xcode
         run: xcodegen generate
@@ -23,8 +23,8 @@ jobs:
       - name: Compiler (sans signature, SideStore signe à l'installation)
         run: |
           xcodebuild \
-            -project MesNotifs.xcodeproj \
-            -scheme MesNotifs \
+            -project Nova.xcodeproj \
+            -scheme Nova \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
@@ -33,15 +33,22 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build
 
-      - name: Créer le fichier .ipa
+      - name: Créer les fichiers .ipa
         run: |
           mkdir Payload
-          cp -R build/Build/Products/Release-iphoneos/MesNotifs.app Payload/
-          zip -qr MesNotifs.ipa Payload
+          cp -R build/Build/Products/Release-iphoneos/Nova.app Payload/
+          # Version de secours, sans autorisation spéciale (icône de l'app sur les notifs)
+          zip -qr Nova-sans-icones.ipa Payload
+          # Version principale : on déclare l'autorisation « Communication Notifications »
+          # pour que SideStore la reprenne en signant (icônes personnalisées sur les notifs)
+          ldid -SSources/Nova.entitlements Payload/Nova.app/Nova
+          zip -qr Nova.ipa Payload
 
       - name: Publier le .ipa
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: MesNotifs build ${{ github.run_number }}
-          files: MesNotifs.ipa
+          name: Nova build ${{ github.run_number }}
+          files: |
+            Nova.ipa
+            Nova-sans-icones.ipa

@@ -1,34 +1,29 @@
 import SwiftUI
 
-// MARK: - Palette Bilgewater : eaux sombres, laiton, voiles rouges, parchemin
+// MARK: - Palette : bleu nuit, accent doré discret (clin d'œil à Bilgewater)
 
 enum BW {
-    static let abyss = Color(red: 0.035, green: 0.094, blue: 0.118)
-    static let deep = Color(red: 0.055, green: 0.165, blue: 0.180)
-    static let hull = Color(red: 0.086, green: 0.180, blue: 0.200)
-    static let sea = Color(red: 0.180, green: 0.520, blue: 0.490)
-    static let gold = Color(red: 0.860, green: 0.680, blue: 0.330)
-    static let rust = Color(red: 0.760, green: 0.250, blue: 0.200)
-    static let parchment = Color(red: 0.940, green: 0.890, blue: 0.780)
-    static let mist = Color(red: 0.940, green: 0.890, blue: 0.780).opacity(0.6)
+    static let abyss = Color(red: 0.047, green: 0.071, blue: 0.094)    // fond
+    static let deep = Color(red: 0.063, green: 0.106, blue: 0.133)     // fond, bas du dégradé
+    static let hull = Color(red: 0.098, green: 0.141, blue: 0.173)     // cartes et lignes
+    static let sea = Color(red: 0.200, green: 0.560, blue: 0.540)      // succès / en cours
+    static let gold = Color(red: 0.850, green: 0.690, blue: 0.380)     // accent
+    static let rust = Color(red: 0.880, green: 0.330, blue: 0.290)     // destructif / alerte
+    static let parchment = Color(red: 0.950, green: 0.955, blue: 0.965) // texte principal
+    static let mist = Color(red: 0.950, green: 0.955, blue: 0.965).opacity(0.58) // texte secondaire
 
-    static func serif(_ style: Font.TextStyle, _ weight: Font.Weight = .bold) -> Font {
-        .system(style, design: .serif).weight(weight)
+    static func font(_ style: Font.TextStyle, _ weight: Font.Weight = .bold) -> Font {
+        .system(style).weight(weight)
     }
 
-    /// Barres de navigation et d'onglets aux couleurs du port.
+    /// Barres de navigation et d'onglets.
     static func applyUIKitAppearance() {
-        func serifFont(_ size: CGFloat, _ weight: UIFont.Weight) -> UIFont {
-            let base = UIFont.systemFont(ofSize: size, weight: weight)
-            guard let d = base.fontDescriptor.withDesign(.serif) else { return base }
-            return UIFont(descriptor: d, size: size)
-        }
         let nav = UINavigationBarAppearance()
         nav.configureWithOpaqueBackground()
         nav.backgroundColor = UIColor(abyss)
-        nav.shadowColor = UIColor(gold.opacity(0.18))
-        nav.titleTextAttributes = [.font: serifFont(17, .semibold), .foregroundColor: UIColor(parchment)]
-        nav.largeTitleTextAttributes = [.font: serifFont(34, .bold), .foregroundColor: UIColor(gold)]
+        nav.shadowColor = UIColor(white: 1, alpha: 0.06)
+        nav.titleTextAttributes = [.foregroundColor: UIColor(parchment)]
+        nav.largeTitleTextAttributes = [.foregroundColor: UIColor(parchment)]
         UINavigationBar.appearance().standardAppearance = nav
         UINavigationBar.appearance().scrollEdgeAppearance = nav
         UINavigationBar.appearance().compactAppearance = nav
@@ -36,7 +31,7 @@ enum BW {
         let tab = UITabBarAppearance()
         tab.configureWithOpaqueBackground()
         tab.backgroundColor = UIColor(abyss)
-        tab.shadowColor = UIColor(gold.opacity(0.18))
+        tab.shadowColor = UIColor(white: 1, alpha: 0.06)
         UITabBar.appearance().standardAppearance = tab
         UITabBar.appearance().scrollEdgeAppearance = tab
     }
@@ -48,12 +43,8 @@ struct BWBackground: View {
     var body: some View {
         ZStack {
             LinearGradient(colors: [BW.abyss, BW.deep], startPoint: .top, endPoint: .bottom)
-            // Lueur de lanterne
-            RadialGradient(colors: [BW.gold.opacity(0.10), .clear], center: .topTrailing,
+            RadialGradient(colors: [BW.gold.opacity(0.05), .clear], center: .topTrailing,
                            startRadius: 10, endRadius: 420)
-            // Reflet de la mer
-            RadialGradient(colors: [BW.sea.opacity(0.14), .clear], center: .bottomLeading,
-                           startRadius: 10, endRadius: 460)
         }
         .ignoresSafeArea()
     }
@@ -68,14 +59,14 @@ struct BWCard: ViewModifier {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(BW.hull.opacity(0.92)))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(BW.gold.opacity(0.22), lineWidth: 1))
+                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
     }
 }
 
 extension View {
     func bwCard() -> some View { modifier(BWCard()) }
 
-    /// Formulaire sur fond Bilgewater.
+    /// Formulaire sur le fond de l'app.
     func bwForm() -> some View {
         scrollContentBackground(.hidden)
             .background(BWBackground())
@@ -93,8 +84,8 @@ struct SectionTitle: View {
 
     var body: some View {
         Label(text, systemImage: icon)
-            .font(BW.serif(.headline))
-            .foregroundStyle(BW.gold)
+            .font(BW.font(.headline, .semibold))
+            .foregroundStyle(BW.parchment)
     }
 }
 
@@ -117,7 +108,7 @@ private struct BWButtonBody: View {
 
     var body: some View {
         configuration.label
-            .font(BW.serif(.headline, .semibold))
+            .font(BW.font(.headline, .semibold))
             .foregroundStyle(filled ? BW.abyss : color)
             .padding(.vertical, 13)
             .frame(maxWidth: .infinity)

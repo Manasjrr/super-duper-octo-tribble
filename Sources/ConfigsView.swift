@@ -45,11 +45,11 @@ struct ConfigsView: View {
                     }
                     .onMove { store.configs.move(fromOffsets: $0, toOffset: $1) }
                 } footer: {
-                    Text("Glisse vers la droite pour choisir la configuration utilisée sur la page Port, vers la gauche pour la dupliquer ou la supprimer.")
+                    Text("Glisse vers la droite pour choisir la configuration utilisée sur la page Accueil, vers la gauche pour la dupliquer ou la supprimer.")
                 }
             }
             .bwForm()
-            .navigationTitle("Cartes")
+            .navigationTitle("Configurations")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     EditButton()
@@ -82,7 +82,7 @@ private struct ConfigRow: View {
                 .font(.title3)
             VStack(alignment: .leading, spacing: 3) {
                 Text(config.name)
-                    .font(BW.serif(.body, .semibold))
+                    .font(BW.font(.body, .semibold))
                     .foregroundStyle(BW.parchment)
                 Text("\(config.count) notifs · \(formatDuration(config.totalDuration)) · \(config.mode.label)")
                     .font(.footnote)
@@ -112,10 +112,10 @@ struct ConfigEditor: View {
                     Button {
                         store.activeConfigID = config.id
                     } label: {
-                        Label("Utiliser sur la page Port", systemImage: "checkmark.circle")
+                        Label("Utiliser sur la page Accueil", systemImage: "checkmark.circle")
                     }
                 } else {
-                    Label("Configuration utilisée sur la page Port", systemImage: "checkmark.circle.fill")
+                    Label("Configuration utilisée sur la page Accueil", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(BW.gold)
                 }
             }
@@ -175,7 +175,7 @@ struct ConfigEditor: View {
                 if hasRare {
                     VStack(alignment: .leading) {
                         HStack {
-                            Label("Chance d'un message rare", systemImage: "star.fill")
+                            Label("Chance d'une notification rare", systemImage: "star.fill")
                             Spacer()
                             Text("\(Int((config.rareChance * 100).rounded())) %")
                                 .foregroundStyle(BW.gold)
@@ -220,9 +220,9 @@ struct ConfigEditor: View {
                     Button("Tout sélectionner") { config.templateIDs = [] }
                 }
             } header: {
-                Text("Messages utilisés")
+                Text("Modèles utilisés")
             } footer: {
-                Text("Le pourcentage indique la chance approximative de chaque message à chaque envoi.")
+                Text("Le pourcentage indique la chance approximative de chaque modèle à chaque envoi.")
             }
             .listRowBackground(BW.hull)
         }
@@ -257,10 +257,10 @@ struct ConfigEditor: View {
 
     private func tirageFooter(hasRare: Bool) -> String {
         var text = config.randomPick
-            ? "Les messages sont tirés au sort selon leur fréquence."
-            : "Les messages sont envoyés dans l'ordre de la liste."
-        text += " « Mélanger » combine le titre d'un message avec le texte et l'image d'autres messages."
-        if !hasRare { text += " Marque un message comme rare pour activer les apparitions rares." }
+            ? "Les modèles sont tirés au sort selon leur fréquence."
+            : "Les modèles sont envoyés dans l'ordre de la liste."
+        text += " « Mélanger » combine le titre d'un modèle avec le texte et l'image d'autres modèles."
+        if !hasRare { text += " Marque un modèle comme rare pour activer les apparitions rares." }
         return text
     }
 

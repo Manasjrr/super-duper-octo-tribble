@@ -8,14 +8,14 @@ struct ContentView: View {
 
     var body: some View {
         TabView {
-            PortView()
-                .tabItem { Label("Port", systemImage: "sailboat.fill") }
+            HomeView()
+                .tabItem { Label("Accueil", systemImage: "house.fill") }
             TemplatesView()
-                .tabItem { Label("Messages", systemImage: "scroll.fill") }
+                .tabItem { Label("Modèles", systemImage: "square.stack.fill") }
             ConfigsView()
-                .tabItem { Label("Cartes", systemImage: "map.fill") }
+                .tabItem { Label("Configurations", systemImage: "slider.horizontal.3") }
             HistoryView()
-                .tabItem { Label("Journal", systemImage: "book.closed.fill") }
+                .tabItem { Label("Historique", systemImage: "clock.fill") }
         }
         .environmentObject(store)
         .tint(BW.gold)
@@ -36,7 +36,7 @@ struct ContentView: View {
 
 // MARK: - Page principale
 
-struct PortView: View {
+struct HomeView: View {
     @EnvironmentObject var store: AppStore
 
     var body: some View {
@@ -73,7 +73,7 @@ struct PortView: View {
                 .animation(.easeInOut(duration: 0.35), value: store.run?.status)
             }
             .background(BWBackground())
-            .navigationTitle("Bilgewater")
+            .navigationTitle("Nova")
         }
     }
 }
@@ -82,9 +82,9 @@ private struct AuthWarning: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Notifications désactivées", systemImage: "bell.slash.fill")
-                .font(BW.serif(.headline))
+                .font(BW.font(.headline))
                 .foregroundStyle(BW.rust)
-            Text("Autorise les notifications de MesNotifs dans Réglages pour que les envois fonctionnent.")
+            Text("Autorise les notifications de Nova dans Réglages pour que les envois fonctionnent.")
                 .font(.footnote)
                 .foregroundStyle(BW.mist)
             Button("Ouvrir Réglages") {
@@ -155,19 +155,19 @@ private struct RunCard: View {
         switch run.status {
         case .running:
             HStack(spacing: 8) { PulseDot(color: BW.sea); Text("En cours") }
-                .font(BW.serif(.headline))
+                .font(BW.font(.headline))
                 .foregroundStyle(BW.parchment)
         case .paused:
             HStack(spacing: 8) { PulseDot(color: BW.gold, animated: false); Text("En pause") }
-                .font(BW.serif(.headline))
+                .font(BW.font(.headline))
                 .foregroundStyle(BW.gold)
         case .finished:
             Label("Terminé", systemImage: "checkmark.seal.fill")
-                .font(BW.serif(.headline))
+                .font(BW.font(.headline))
                 .foregroundStyle(BW.gold)
         case .stopped:
             Label("Arrêté", systemImage: "xmark.octagon.fill")
-                .font(BW.serif(.headline))
+                .font(BW.font(.headline))
                 .foregroundStyle(BW.rust)
         }
     }
@@ -175,7 +175,7 @@ private struct RunCard: View {
     private func stat(_ label: String, _ value: Int) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("\(value)")
-                .font(.system(size: 34, weight: .bold, design: .serif))
+                .font(.system(size: 34, weight: .bold, design: .rounded))
                 .foregroundStyle(BW.parchment)
                 .monospacedDigit()
             Text(label.uppercased())
@@ -218,13 +218,13 @@ private struct QuickSettings: View {
         let pool = store.pool(for: config)
         let rareCount = pool.filter(\.isRare).count
         let running = store.run?.isActive == true
-        let poolText = "\(pool.count) message\(pool.count > 1 ? "s" : "")"
+        let poolText = "\(pool.count) modèle\(pool.count > 1 ? "s" : "")"
             + (rareCount > 0 ? " · \(rareCount) rare\(rareCount > 1 ? "s" : "")" : "")
 
         VStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    SectionTitle("Cap", icon: "map.fill")
+                    SectionTitle("Configuration", icon: "slider.horizontal.3")
                     Spacer()
                     Menu {
                         ForEach(store.configs) { c in
@@ -259,12 +259,12 @@ private struct QuickSettings: View {
                     .font(.caption)
                     .foregroundStyle(BW.mist)
 
-                Toggle("Tirage aléatoire des messages", isOn: $config.randomPick)
+                Toggle("Tirage aléatoire des modèles", isOn: $config.randomPick)
 
                 Divider().overlay(BW.gold.opacity(0.25))
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Label(poolText, systemImage: "scroll")
+                    Label(poolText, systemImage: "square.stack")
                     if config.count > 1 {
                         Label("≈ 1 notification toutes les \(formatDuration(config.totalDuration / Double(config.count - 1)))",
                               systemImage: "metronome")
@@ -298,7 +298,7 @@ private struct QuickSettings: View {
 
             if !running {
                 Button { store.start() } label: {
-                    Label("Lever l'ancre", systemImage: "sailboat.fill")
+                    Label("Démarrer", systemImage: "play.fill")
                 }
                 .buttonStyle(BWButtonStyle())
                 .disabled(pool.isEmpty)

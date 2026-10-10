@@ -9,6 +9,7 @@ struct NotifTemplate: Identifiable, Codable, Hashable {
     var subtitle = ""
     var body = ""
     var imageFile: String? = nil
+    var iconFile: String? = nil // icône ronde à gauche (notification de communication)
     var weight: Double = 1      // poids relatif pour le tirage
     var isRare = false          // n'apparaît qu'avec la « chance de rare » de la config
 
@@ -76,6 +77,7 @@ struct PlannedNotif: Identifiable, Codable, Hashable {
     var subtitle: String
     var body: String
     var imageFile: String?
+    var iconFile: String? = nil
     var isRare: Bool
     var scheduled = false   // programmée auprès d'iOS
     var logged = false      // ajoutée au journal
@@ -115,6 +117,7 @@ struct HistoryEntry: Identifiable, Codable, Hashable {
     var title: String
     var body: String
     var imageFile: String? = nil
+    var iconFile: String? = nil
     var isTest = false
     var isRare = false
 }
@@ -138,6 +141,7 @@ extension NotifTemplate {
         subtitle = c.value(.subtitle, subtitle)
         body = c.value(.body, body)
         imageFile = try? c.decodeIfPresent(String.self, forKey: .imageFile)
+        iconFile = try? c.decodeIfPresent(String.self, forKey: .iconFile)
         weight = c.value(.weight, weight)
         isRare = c.value(.isRare, isRare)
     }
@@ -163,24 +167,4 @@ extension SendConfig {
         rareChance = c.value(.rareChance, rareChance)
         templateIDs = c.value(.templateIDs, templateIDs)
     }
-}
-
-// MARK: - Préréglages
-
-enum Presets {
-    static let templates: [NotifTemplate] = [
-        NotifTemplate(emoji: "🍊", title: "Gangplank", body: "Les oranges, c'est bon pour la santé. Le scorbut, beaucoup moins."),
-        NotifTemplate(emoji: "🔫", title: "Miss Fortune", body: "La chance n'a rien à voir là-dedans, mon chou."),
-        NotifTemplate(emoji: "🦑", title: "Kraken en vue !", body: "Une ombre géante remue sous les quais de Bilgewater."),
-        NotifTemplate(emoji: "⚓", title: "Rappel du port", body: "Ton navire t'attend au quai des Égorgeurs."),
-        NotifTemplate(emoji: "💰", title: "Prime disponible", subtitle: "Tableau des primes", body: "Une nouvelle tête vient d'être mise à prix."),
-        NotifTemplate(emoji: "🏴‍☠️", title: "Trésor légendaire", body: "Tu as trouvé la carte du trésor perdu de Bilgewater !", isRare: true),
-    ]
-
-    static let configs: [SendConfig] = [
-        SendConfig(name: "Test rapide", count: 5, totalDuration: 60, minInterval: 5, maxInterval: 30, mode: .regular),
-        SendConfig(name: "Brise du port", count: 10, totalDuration: 300, minInterval: 10, maxInterval: 60, mode: .regular),
-        SendConfig(name: "Tempête aléatoire", count: 20, totalDuration: 600, minInterval: 5, maxInterval: 90, mode: .random),
-        SendConfig(name: "Abordage en rafales", count: 15, totalDuration: 300, minInterval: 20, maxInterval: 120, mode: .burst, burstSize: 3, burstGap: 2),
-    ]
 }

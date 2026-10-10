@@ -1,5 +1,6 @@
 import SwiftUI
 import UserNotifications
+import Intents
 
 // MARK: - Sauvegarde
 
@@ -51,7 +52,7 @@ final class AppStore: ObservableObject {
             run = state.run
             history = state.history
         } else {
-            templates = Presets.templates
+            templates = Presets.makeTemplates()
             configs = Presets.configs
         }
         if configs.isEmpty { configs = Presets.configs }
@@ -99,6 +100,7 @@ final class AppStore: ObservableObject {
     func deleteTemplate(_ t: NotifTemplate) {
         templates.removeAll { $0.id == t.id }
         releaseImage(t.imageFile)
+        releaseImage(t.iconFile)
         for i in configs.indices where configs[i].templateIDs.contains(t.id) {
             configs[i].templateIDs.removeAll { $0 == t.id }
         }
@@ -109,6 +111,7 @@ final class AppStore: ObservableObject {
         copy.id = UUID()
         copy.title = t.title.isEmpty ? t.title : t.title + " (copie)"
         copy.imageFile = ImageStore.copy(t.imageFile)
+        copy.iconFile = ImageStore.copy(t.iconFile)
         if let i = templates.firstIndex(where: { $0.id == t.id }) {
             templates.insert(copy, at: i + 1)
         } else {
@@ -118,7 +121,7 @@ final class AppStore: ObservableObject {
 
     /// Supprime le fichier image s'il n'est plus utilisé par aucun message.
     func releaseImage(_ name: String?) {
-        guard let name, !templates.contains(where: { $0.imageFile == name }) else { return }
+        guard let name, !templates.contains(where: { $0.imageFile == name || $0.iconFile == name }) else { return }
         ImageStore.delete(name)
     }
 
@@ -166,11 +169,7 @@ final class AppStore: ObservableObject {
             p.id = UUID()
             configs.append(p)
         }
-        let existing = Set(templates.map(\.title))
-        for var t in Presets.templates where !existing.contains(t.title) {
-            t.id = UUID()
-            templates.append(t)
-        }
+        templates += Presets.makeTemplates(excludingTitles: Set(templates.map(\.title)))
     }
 
     /// Messages utilisés par une config (tous si aucune sélection).
@@ -190,7 +189,7 @@ final class AppStore: ObservableObject {
         }
         let pool = pool(for: config)
         guard !pool.isEmpty else {
-            message = "Ajoute au moins un message avant de lancer."
+            message = "Ajoute au moins un modèle avant de démarrer."
             return
         }
         if run?.isActive == true { stop() }
@@ -201,7 +200,7 @@ final class AppStore: ObservableObject {
             guard let t = picker.next() else { return nil }
             return PlannedNotif(fireDate: now.addingTimeInterval(offset),
                                 title: t.displayTitle, subtitle: t.subtitle, body: t.body,
-                                imageFile: t.imageFile, isRare: t.isRare)
+                                imageFile: t.imageFile, iconFile: t.iconFile, isRare: t.isRare)
         }
         message = nil
         run = Run(configName: config.name, items: items, plannedCount: items.count)
@@ -267,7 +266,7 @@ final class AppStore: ObservableObject {
             for i in r.items.indices where budget > 0 && !r.items[i].scheduled {
                 let it = r.items[i]
                 Notifier.schedule(id: it.id, title: it.title, subtitle: it.subtitle, body: it.body,
-                                  imageFile: it.imageFile, at: it.fireDate)
+                                  imageFile: it.imageFile, iconFile: it.iconFile, at: it.fireDate)
                 r.items[i].scheduled = true
                 budget -= 1
             }
@@ -278,7 +277,7 @@ final class AppStore: ObservableObject {
         for i in r.items.indices where r.items[i].scheduled && !r.items[i].logged && r.items[i].fireDate <= now {
             let it = r.items[i]
             newEntries.append(HistoryEntry(date: it.fireDate, title: it.title, body: it.body,
-                                           imageFile: it.imageFile, isRare: it.isRare))
+                                           imageFile: it.imageFile, iconFile: it.iconFile, isRare: it.isRare))
             r.items[i].logged = true
         }
         if !newEntries.isEmpty { addHistory(newEntries) }
@@ -300,14 +299,14 @@ final class AppStore: ObservableObject {
             t = picker.next()
         }
         guard let t, !t.isEmpty else {
-            message = "Aucun message à tester."
+            message = "Aucun modèle à tester."
             return
         }
         let date = Date().addingTimeInterval(1)
         Notifier.schedule(id: UUID(), title: t.displayTitle, subtitle: t.subtitle, body: t.body,
-                          imageFile: t.imageFile, at: date)
+                          imageFile: t.imageFile, iconFile: t.iconFile, at: date)
         addHistory([HistoryEntry(date: date, title: t.displayTitle, body: t.body,
-                                 imageFile: t.imageFile, isTest: true, isRare: t.isRare)])
+                                 imageFile: t.imageFile, iconFile: t.iconFile, isTest: true, isRare: t.isRare)])
         message = nil
     }
 
@@ -323,7 +322,7 @@ final class AppStore: ObservableObject {
 
 enum Notifier {
     static func schedule(id: UUID, title: String, subtitle: String, body: String,
-                         imageFile: String?, at date: Date) {
+                         imageFile: String?, iconFile: String?, at date: Date) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.subtitle = subtitle
@@ -334,8 +333,45 @@ enum Notifier {
         }
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, date.timeIntervalSinceNow),
                                                         repeats: false)
-        let request = UNNotificationRequest(identifier: id.uuidString, content: content, trigger: trigger)
-        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+        func add(_ c: UNNotificationContent) {
+            let request = UNNotificationRequest(identifier: id.uuidString, content: c, trigger: trigger)
+            UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+        }
+
+        guard let iconFile, let iconData = ImageStore.data(iconFile) else {
+            add(content)
+            return
+        }
+
+        // Notification de communication : l'icône personnalisée remplace celle de l'app
+        // (en rond, avec le petit logo de l'app dans le coin), comme les messageries.
+        let avatar = INImage(imageData: iconData)
+        let key = "nova-" + iconFile
+        let sender = INPerson(personHandle: INPersonHandle(value: key, type: .unknown),
+                              nameComponents: nil,
+                              displayName: title,
+                              image: avatar,
+                              contactIdentifier: nil,
+                              customIdentifier: key)
+        let intent = INSendMessageIntent(recipients: nil,
+                                         outgoingMessageType: .outgoingMessageText,
+                                         content: body,
+                                         speakableGroupName: nil,
+                                         conversationIdentifier: key,
+                                         serviceName: nil,
+                                         sender: sender,
+                                         attachments: nil)
+        intent.setImage(avatar, forParameterNamed: \INSendMessageIntent.sender)
+        let interaction = INInteraction(intent: intent, response: nil)
+        interaction.direction = .incoming
+        interaction.donate { _ in
+            // Sans l'autorisation « Communication Notifications », iOS refuse : on envoie la version normale.
+            if let updated = try? content.updating(from: intent) {
+                add(updated)
+            } else {
+                add(content)
+            }
+        }
     }
 
     static func cancel(_ ids: [UUID]) {
@@ -359,9 +395,12 @@ enum ImageStore {
     static func url(_ name: String) -> URL { folder.appendingPathComponent(name) }
 
     /// Redimensionne, compresse et enregistre une image. Renvoie son nom de fichier.
-    static func save(_ data: Data) -> String? {
+    static func save(_ data: Data, maxSide: CGFloat = 1200) -> String? {
         guard let image = UIImage(data: data) else { return nil }
-        let maxSide: CGFloat = 1200
+        return save(image: image, maxSide: maxSide)
+    }
+
+    static func save(image: UIImage, maxSide: CGFloat = 1200) -> String? {
         let scale = min(1, maxSide / max(image.size.width, image.size.height))
         let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
         let format = UIGraphicsImageRendererFormat.default()
@@ -385,6 +424,10 @@ enum ImageStore {
         guard let image = UIImage(contentsOfFile: url(name).path) else { return nil }
         cache.setObject(image, forKey: name as NSString)
         return image
+    }
+
+    static func data(_ name: String) -> Data? {
+        try? Data(contentsOf: url(name))
     }
 
     static func copy(_ name: String?) -> String? {
