@@ -407,7 +407,22 @@ struct TemplateEditor: View {
         } header: {
             Text("Icône")
         } footer: {
-            Text("Comme dans les messageries : l'icône s'affiche en rond à gauche de la notification, avec le petit logo de Nova dans le coin. Le titre sert de nom d'expéditeur.")
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Comme dans les messageries : l'icône s'affiche en rond à gauche de la notification, avec le petit logo de Nova dans le coin. Le titre sert de nom d'expéditeur.")
+                switch IconSupport.current {
+                case .granted:
+                    Label("Autorisation iOS présente", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(BW.sea)
+                case .missing:
+                    Label("Autorisation iOS absente : les notifications garderont l'icône de Nova.", systemImage: "xmark.circle.fill")
+                        .foregroundStyle(BW.rust)
+                case .unknown:
+                    Label("Autorisation iOS : état inconnu.", systemImage: "questionmark.circle")
+                }
+                if let error = IconSupport.lastError {
+                    Text("Dernière erreur iOS : \(error)")
+                }
+            }
         }
         .listRowBackground(BW.hull)
     }

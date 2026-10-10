@@ -46,6 +46,9 @@ struct HomeView: View {
                     if store.authorization == .denied {
                         AuthWarning()
                     }
+                    if IconSupport.current == .missing && store.templates.contains(where: { $0.iconFile != nil }) {
+                        IconWarning()
+                    }
                     if let run = store.run {
                         RunCard(run: run)
                             .transition(.opacity.combined(with: .move(edge: .top)))
@@ -93,6 +96,20 @@ private struct AuthWarning: View {
                 }
             }
             .buttonStyle(BWButtonStyle(color: BW.rust, filled: false))
+        }
+        .bwCard()
+    }
+}
+
+private struct IconWarning: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Icônes personnalisées indisponibles", systemImage: "person.crop.circle.badge.exclamationmark")
+                .font(BW.font(.headline, .semibold))
+                .foregroundStyle(BW.gold)
+            Text("Cette installation n'a pas reçu l'autorisation « Communication Notifications » d'Apple. Les notifications utilisent donc l'icône de Nova. Les images jointes fonctionnent toujours.")
+                .font(.footnote)
+                .foregroundStyle(BW.mist)
         }
         .bwCard()
     }

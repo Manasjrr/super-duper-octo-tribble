@@ -366,17 +366,42 @@ enum Notifier {
         interaction.direction = .incoming
         interaction.donate { _ in
             // Sans l'autorisation « Communication Notifications », iOS refuse : on envoie la version normale.
-            if let updated = try? content.updating(from: intent) {
+            do {
+                let updated = try content.updating(from: intent)
                 add(updated)
-            } else {
+                UserDefaults.standard.removeObject(forKey: lastIconErrorKey)
+            } catch {
                 add(content)
+                UserDefaults.standard.set(error.localizedDescription, forKey: lastIconErrorKey)
             }
         }
     }
 
+    static let lastIconErrorKey = "derniereErreurIcone"
+
     static func cancel(_ ids: [UUID]) {
         guard !ids.isEmpty else { return }
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids.map(\.uuidString))
+    }
+}
+
+// MARK: - Diagnostic des icônes personnalisées
+
+enum IconSupport {
+    case granted    // le profil de signature contient l'autorisation
+    case missing    // installée sans l'autorisation (cas de SideStore avec un compte gratuit)
+    case unknown    // pas de profil lisible
+
+    /// Lit le profil de signature installé avec l'app (embedded.mobileprovision).
+    static let current: IconSupport = {
+        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+              let data = try? Data(contentsOf: url) else { return .unknown }
+        let text = String(decoding: data, as: UTF8.self)
+        return text.contains("com.apple.developer.usernotifications.communication") ? .granted : .missing
+    }()
+
+    static var lastError: String? {
+        UserDefaults.standard.string(forKey: Notifier.lastIconErrorKey)
     }
 }
 
