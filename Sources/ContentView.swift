@@ -107,7 +107,7 @@ private struct IconWarning: View {
             Label("Icônes personnalisées indisponibles", systemImage: "person.crop.circle.badge.exclamationmark")
                 .font(BW.font(.headline, .semibold))
                 .foregroundStyle(BW.gold)
-            Text("Cette installation n'a pas reçu l'autorisation « Communication Notifications » d'Apple. Les notifications utilisent donc l'icône de Nova. Les images jointes fonctionnent toujours.")
+            Text("Cette installation n'a pas reçu l'autorisation « Communication Notifications » d'Apple : iOS n'affiche pas une icône différente par notification. Solution : choisis une « Icône de l'app » dans la configuration. Toutes les notifications du scénario prendront cette icône.")
                 .font(.footnote)
                 .foregroundStyle(BW.mist)
         }

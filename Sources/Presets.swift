@@ -65,6 +65,50 @@ enum IconMaker {
     }
 }
 
+// MARK: - Icônes alternatives de l'app
+//
+// Sans l'autorisation « Communication Notifications », iOS affiche toujours l'icône de l'app
+// sur les notifications. On peut en revanche changer l'icône de l'app elle-même (aucune
+// autorisation requise) : toutes les notifications prennent alors cette icône.
+// Limites iOS : changement uniquement app ouverte, avec une alerte de confirmation.
+
+enum AppIcons {
+    struct Choice: Identifiable {
+        let name: String?   // nil = icône principale (Nova)
+        let label: String
+        var id: String { name ?? "nova" }
+        var preview: String { name.map { "Preview-" + $0 } ?? "Emblem" }
+    }
+
+    static let choices: [Choice] = [
+        Choice(name: nil, label: "Nova"),
+        Choice(name: "AppIcon-Messages", label: "Messages"),
+        Choice(name: "AppIcon-Mail", label: "Mail"),
+        Choice(name: "AppIcon-Colis", label: "Colis"),
+        Choice(name: "AppIcon-Banque", label: "Banque"),
+        Choice(name: "AppIcon-Agenda", label: "Agenda"),
+        Choice(name: "AppIcon-Social", label: "Social"),
+        Choice(name: "AppIcon-Alerte", label: "Alerte"),
+    ]
+
+    /// Applique l'icône si elle diffère de l'actuelle. Doit être appelé app au premier plan.
+    @MainActor
+    static func apply(_ name: String?, completion: @escaping (String?) -> Void) {
+        let app = UIApplication.shared
+        guard app.supportsAlternateIcons else {
+            completion("Cet appareil ne permet pas de changer l'icône de l'app.")
+            return
+        }
+        guard app.alternateIconName != name else {
+            completion(nil)
+            return
+        }
+        app.setAlternateIconName(name) { error in
+            DispatchQueue.main.async { completion(error?.localizedDescription) }
+        }
+    }
+}
+
 // MARK: - Préréglages
 
 enum Presets {

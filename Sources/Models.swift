@@ -66,6 +66,7 @@ struct SendConfig: Identifiable, Codable, Hashable {
     var mixContent = false              // mélange titres / textes / images entre messages
     var rareChance: Double = 0.05
     var templateIDs: [UUID] = []        // vide = tous les messages
+    var appIcon: String? = nil          // icône alternative de l'app pendant le scénario (nil = Nova)
 }
 
 // MARK: - Scénario en cours
@@ -166,5 +167,6 @@ extension SendConfig {
         mixContent = c.value(.mixContent, mixContent)
         rareChance = c.value(.rareChance, rareChance)
         templateIDs = c.value(.templateIDs, templateIDs)
+        appIcon = try? c.decodeIfPresent(String.self, forKey: .appIcon)
     }
 }

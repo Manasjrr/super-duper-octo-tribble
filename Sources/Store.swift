@@ -205,6 +205,9 @@ final class AppStore: ObservableObject {
         message = nil
         run = Run(configName: config.name, items: items, plannedCount: items.count)
         tick()
+        AppIcons.apply(config.appIcon) { [weak self] error in
+            if let error { self?.message = "Icône de l'app non changée : \(error)" }
+        }
     }
 
     func pause() {

@@ -155,6 +155,43 @@ struct ConfigEditor: View {
             .listRowBackground(BW.hull)
 
             Section {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        ForEach(AppIcons.choices) { choice in
+                            let selected = config.appIcon == choice.name
+                            Button {
+                                config.appIcon = choice.name
+                            } label: {
+                                VStack(spacing: 6) {
+                                    Image(choice.preview)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 54, height: 54)
+                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                                .strokeBorder(BW.gold, lineWidth: selected ? 2.5 : 0)
+                                                .padding(-4)
+                                        )
+                                    Text(choice.label)
+                                        .font(.caption2)
+                                        .foregroundStyle(selected ? BW.gold : BW.mist)
+                                }
+                                .padding(4)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            } header: {
+                Text("Icône de l'app")
+            } footer: {
+                Text("Appliquée au démarrage du scénario : les notifications et l'écran d'accueil prennent cette icône. iOS affiche une petite alerte de confirmation à chaque changement. Choisis « Nova » pour revenir à l'icône d'origine.")
+            }
+            .listRowBackground(BW.hull)
+
+            Section {
                 RhythmPreview(offsets: sample)
                 Button {
                     regenerate()
