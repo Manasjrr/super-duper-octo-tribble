@@ -3,6 +3,8 @@ name: Compiler l'app
 on:
   push:
     branches: [main]
+    # Les pages des applis expéditrices (docs/) n'ont pas besoin d'un nouveau build de l'app
+    paths-ignore: ['docs/**']
   workflow_dispatch:
 
 permissions:
@@ -14,8 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Installer XcodeGen et ldid
-        run: brew install xcodegen ldid
+      - name: Installer XcodeGen
+        run: brew install xcodegen
 
       - name: Générer le projet Xcode
         run: xcodegen generate
@@ -33,15 +35,10 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build
 
-      - name: Créer les fichiers .ipa
+      - name: Créer le fichier .ipa
         run: |
           mkdir Payload
           cp -R build/Build/Products/Release-iphoneos/Nova.app Payload/
-          # Version de secours, sans autorisation spéciale (icône de l'app sur les notifs)
-          zip -qr Nova-sans-icones.ipa Payload
-          # Version principale : on déclare l'autorisation « Communication Notifications »
-          # pour que SideStore la reprenne en signant (icônes personnalisées sur les notifs)
-          ldid -SSources/Nova.entitlements Payload/Nova.app/Nova
           zip -qr Nova.ipa Payload
 
       - name: Publier le .ipa
@@ -49,6 +46,4 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: Nova build ${{ github.run_number }}
-          files: |
-            Nova.ipa
-            Nova-sans-icones.ipa
+          files: Nova.ipa

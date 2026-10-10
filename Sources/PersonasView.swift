@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 // Gestion des applis web expéditrices (une icône et un nom par expéditeur).
 struct PersonasView: View {
@@ -11,7 +12,7 @@ struct PersonasView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("De vraies notifications, avec d'autres icônes")
                         .font(BW.font(.headline, .semibold))
-                    Text("Chaque expéditeur est une petite appli web que tu ajoutes à ton écran d'accueil. Ses notifications arrivent avec sa propre icône et son nom, et s'empilent normalement. Nova les envoie pendant les scénarios en affichage « Applis web ».")
+                    Text("Chaque expéditeur est une petite appli web que tu ajoutes à ton écran d'accueil. Ses notifications arrivent avec sa propre icône et son nom, et s'empilent normalement. Nova les envoie pendant les scénarios.")
                         .font(.footnote)
                         .foregroundStyle(BW.mist)
                 }
@@ -171,13 +172,13 @@ private struct PersonaRow: View {
 
 /// Choix du nom et de l'icône d'un expéditeur « Perso ».
 private struct CustomPersonaSheet: View {
-    @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) private var dismiss
     let slot: WebPersonas.Slot
     let onInstall: (String, Data?) -> Void
 
     @State private var name = ""
-    @State private var iconFile: String?
+    @State private var photo: PhotosPickerItem?
+    @State private var icon: UIImage?
 
     var body: some View {
         NavigationStack {
@@ -188,32 +189,25 @@ private struct CustomPersonaSheet: View {
                 .listRowBackground(BW.hull)
 
                 Section {
-                    let withIcons = store.templates.filter { $0.iconFile != nil }
-                    if withIcons.isEmpty {
-                        Text("Aucun modèle n'a d'icône. Crée une icône dans un modèle (section Icône).")
-                            .font(.footnote)
-                            .foregroundStyle(BW.mist)
-                    } else {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
-                                ForEach(withIcons) { t in
-                                    Button {
-                                        iconFile = t.iconFile
-                                        if name.isEmpty { name = t.title }
-                                    } label: {
-                                        TemplateThumbnail(template: t, size: 52)
-                                            .overlay(Circle().strokeBorder(BW.gold, lineWidth: iconFile == t.iconFile ? 3 : 0))
-                                    }
-                                    .buttonStyle(.plain)
-                                }
+                    HStack(spacing: 14) {
+                        Group {
+                            if let icon {
+                                Image(uiImage: icon).resizable().scaledToFill()
+                            } else {
+                                Image("Emblem").resizable().scaledToFill()
                             }
-                            .padding(.vertical, 4)
+                        }
+                        .frame(width: 56, height: 56)
+                        .clipShape(RoundedRectangle(cornerRadius: 12.6, style: .continuous))
+
+                        PhotosPicker(selection: $photo, matching: .images) {
+                            Label(icon == nil ? "Choisir une image" : "Changer l'image", systemImage: "photo")
                         }
                     }
                 } header: {
                     Text("Icône")
                 } footer: {
-                    Text("Reprend l'icône d'un de tes modèles. Si iOS ne la prend pas en compte, l'appli gardera l'icône étoile de Nova.")
+                    Text("Image recadrée en carré. Si iOS ne la prend pas en compte, l'appli gardera l'icône de Nova.")
                 }
                 .listRowBackground(BW.hull)
             }
@@ -226,13 +220,36 @@ private struct CustomPersonaSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Installer") {
-                        let icon = ImageStore.thumbnailData(iconFile, side: 180)
+                        let data = icon.flatMap { Self.squareJPEG($0, side: 180) }
                         dismiss()
-                        onInstall(name.trimmingCharacters(in: .whitespaces), icon)
+                        onInstall(name.trimmingCharacters(in: .whitespaces), data)
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .onChange(of: photo) { item in
+                guard let item else { return }
+                Task {
+                    if let data = try? await item.loadTransferable(type: Data.self) {
+                        icon = UIImage(data: data)
+                    }
+                }
+            }
         }
+    }
+
+    /// Recadre au centre en carré et compresse (l'image voyage dans l'adresse de la page).
+    private static func squareJPEG(_ image: UIImage, side: CGFloat) -> Data? {
+        guard image.size.width > 0, image.size.height > 0 else { return nil }
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let scale = max(side / image.size.width, side / image.size.height)
+        let drawn = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let square = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
+            image.draw(in: CGRect(x: (side - drawn.width) / 2, y: (side - drawn.height) / 2,
+                                  width: drawn.width, height: drawn.height))
+        }
+        return square.jpegData(compressionQuality: 0.7)
     }
 }

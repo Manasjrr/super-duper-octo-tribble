@@ -8,11 +8,9 @@ struct NotifTemplate: Identifiable, Codable, Hashable {
     var title = ""
     var subtitle = ""
     var body = ""
-    var imageFile: String? = nil
-    var iconFile: String? = nil // icône ronde à gauche (notification de communication)
-    var personaID: String? = nil // appli web expéditrice (mode « Applis web »)
-    var weight: Double = 1      // poids relatif pour le tirage
-    var isRare = false          // n'apparaît qu'avec la « chance de rare » de la config
+    var personaID: String? = nil    // appli expéditrice (nil = Nova)
+    var weight: Double = 1          // poids relatif pour le tirage
+    var isRare = false              // n'apparaît qu'avec la « chance de rare » de la config
 
     var displayTitle: String {
         let t = title.trimmingCharacters(in: .whitespaces)
@@ -64,13 +62,9 @@ struct SendConfig: Identifiable, Codable, Hashable {
     var burstGap: Double = 2            // secondes entre deux notifs d'une rafale
     var randomPick = true               // tirage aléatoire (sinon dans l'ordre de la liste)
     var avoidRepeats = true
-    var mixContent = false              // mélange titres / textes / images entre messages
+    var mixContent = false              // mélange titres et textes entre modèles
     var rareChance: Double = 0.05
-    var templateIDs: [UUID] = []        // vide = tous les messages
-    var appIcon: String? = nil          // icône alternative de l'app pendant le scénario (nil = Nova)
-    var liveActivity = false            // affichage en Activité en direct (icônes libres)
-    var liveArchive = true              // + copie silencieuse dans le centre de notifications
-    var webPush = false                 // envoi par les applis web expéditrices (vraies icônes)
+    var templateIDs: [UUID] = []        // vide = tous les modèles
 }
 
 // MARK: - Scénario en cours
@@ -81,12 +75,10 @@ struct PlannedNotif: Identifiable, Codable, Hashable {
     var title: String
     var subtitle: String
     var body: String
-    var imageFile: String?
-    var iconFile: String? = nil
     var personaID: String? = nil
     var isRare: Bool
-    var scheduled = false   // programmée auprès d'iOS
-    var logged = false      // ajoutée au journal
+    var scheduled = false   // déjà envoyée
+    var logged = false      // ajoutée à l'historique
 }
 
 enum RunStatus: String, Codable {
@@ -101,13 +93,8 @@ struct Run: Codable, Equatable {
     var startedAt = Date()
     var pausedAt: Date? = nil
     var endedAt: Date? = nil
-    var live: Bool? = nil   // scénario affiché en Activité en direct
-    var liveArchive: Bool? = nil
-    var web: Bool? = nil    // scénario envoyé par les applis web
 
     var isActive: Bool { status == .running || status == .paused }
-    var isLive: Bool { live == true }
-    var isWeb: Bool { web == true }
 
     func sent(at now: Date) -> Int {
         let ref = pausedAt ?? now
@@ -120,15 +107,13 @@ struct Run: Codable, Equatable {
     }
 }
 
-// MARK: - Journal
+// MARK: - Historique
 
 struct HistoryEntry: Identifiable, Codable, Hashable {
     var id = UUID()
     var date: Date
     var title: String
     var body: String
-    var imageFile: String? = nil
-    var iconFile: String? = nil
     var personaID: String? = nil
     var isTest = false
     var isRare = false
@@ -152,8 +137,6 @@ extension NotifTemplate {
         title = c.value(.title, title)
         subtitle = c.value(.subtitle, subtitle)
         body = c.value(.body, body)
-        imageFile = try? c.decodeIfPresent(String.self, forKey: .imageFile)
-        iconFile = try? c.decodeIfPresent(String.self, forKey: .iconFile)
         personaID = try? c.decodeIfPresent(String.self, forKey: .personaID)
         weight = c.value(.weight, weight)
         isRare = c.value(.isRare, isRare)
@@ -179,9 +162,5 @@ extension SendConfig {
         mixContent = c.value(.mixContent, mixContent)
         rareChance = c.value(.rareChance, rareChance)
         templateIDs = c.value(.templateIDs, templateIDs)
-        appIcon = try? c.decodeIfPresent(String.self, forKey: .appIcon)
-        liveActivity = c.value(.liveActivity, liveActivity)
-        liveArchive = c.value(.liveArchive, liveArchive)
-        webPush = c.value(.webPush, webPush)
     }
 }

@@ -19,6 +19,7 @@ struct HistoryView: View {
             }
             .bwForm()
             .navigationTitle("Historique")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Effacer") { confirmClear = true }
@@ -37,21 +38,7 @@ private struct HistoryRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            if let slot = WebPersonas.slot(entry.personaID) {
-                Image(slot.preview)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 36, height: 36)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            } else if let icon = ImageStore.load(entry.iconFile) {
-                Image(uiImage: icon)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 36, height: 36)
-                    .clipShape(Circle())
-            } else {
-                AppEmblem(size: 36)
-            }
+            SenderIcon(slot: WebPersonas.slot(entry.personaID), size: 36)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(entry.title.isEmpty ? "Sans titre" : entry.title)
@@ -79,14 +66,6 @@ private struct HistoryRow: View {
                 Text(entry.date.formatted(.dateTime.day().month().hour().minute().second()))
                     .font(.caption2)
                     .foregroundStyle(BW.mist)
-            }
-            Spacer(minLength: 0)
-            if let image = ImageStore.load(entry.imageFile) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 40, height: 40)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         }
     }

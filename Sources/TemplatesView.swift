@@ -1,7 +1,6 @@
 import SwiftUI
-import PhotosUI
 
-// MARK: - Liste des messages
+// MARK: - Liste des modèles
 
 struct TemplatesView: View {
     @EnvironmentObject var store: AppStore
@@ -46,6 +45,7 @@ struct TemplatesView: View {
             }
             .bwForm()
             .navigationTitle("Modèles")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     EditButton()
@@ -65,8 +65,9 @@ private struct TemplateRow: View {
     let template: NotifTemplate
 
     var body: some View {
+        let slot = WebPersonas.slot(template.personaID ?? WebPersonas.defaultSender)
         HStack(spacing: 12) {
-            TemplateThumbnail(template: template, size: 46)
+            SenderIcon(slot: slot, size: 44)
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
@@ -84,17 +85,9 @@ private struct TemplateRow: View {
                     .font(.footnote)
                     .foregroundStyle(BW.mist)
                     .lineLimit(2)
-                if let slot = WebPersonas.slot(template.personaID) {
-                    HStack(spacing: 5) {
-                        Image(slot.preview)
-                            .resizable()
-                            .frame(width: 14, height: 14)
-                            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                        Text(slot.label)
-                    }
+                Text(slot?.label ?? "Nova")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(BW.mist)
-                }
             }
             Spacer(minLength: 0)
             if template.weight != 1 {
@@ -107,27 +100,17 @@ private struct TemplateRow: View {
     }
 }
 
-/// Vignette d'un modèle : son icône, sinon son image, sinon l'icône de l'app.
-struct TemplateThumbnail: View {
-    let template: NotifTemplate
-    var size: CGFloat = 46
+/// Icône d'une appli expéditrice (celle de Nova par défaut).
+struct SenderIcon: View {
+    let slot: WebPersonas.Slot?
+    var size: CGFloat = 44
 
     var body: some View {
-        if let icon = ImageStore.load(template.iconFile) {
-            Image(uiImage: icon)
-                .resizable()
-                .scaledToFill()
-                .frame(width: size, height: size)
-                .clipShape(Circle())
-        } else if let image = ImageStore.load(template.imageFile) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: size, height: size)
-                .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
-        } else {
-            AppEmblem(size: size)
-        }
+        Image(slot?.preview ?? "Emblem")
+            .resizable()
+            .scaledToFill()
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.225, style: .continuous))
     }
 }
 
@@ -137,13 +120,11 @@ struct NotificationPreview: View {
     let title: String
     let subtitle: String
     let message: String
-    let image: UIImage?
-    var icon: UIImage? = nil
-    var appIcon: String? = nil      // icône de l'appli expéditrice (image du catalogue)
+    let slot: WebPersonas.Slot?
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            leading
+            SenderIcon(slot: slot, size: 38)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(title.isEmpty ? "Titre" : title)
@@ -154,19 +135,10 @@ struct NotificationPreview: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                if !subtitle.isEmpty {
-                    Text(subtitle).font(.subheadline.weight(.medium)).lineLimit(1)
-                }
-                Text(message.isEmpty ? "Message" : message)
+                // Les notifications web n'ont pas de sous-titre : il est ajouté en tête du texte
+                Text(subtitle.isEmpty ? (message.isEmpty ? "Message" : message) : subtitle + "\n" + message)
                     .font(.subheadline)
                     .lineLimit(4)
-            }
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 38, height: 38)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         }
         .foregroundStyle(.primary)
@@ -179,29 +151,6 @@ struct NotificationPreview: View {
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         )
     }
-
-    @ViewBuilder private var leading: some View {
-        if let appIcon {
-            Image(appIcon)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 38, height: 38)
-                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        } else if let icon {
-            // Rendu d'une notification de communication : icône ronde + petit logo de l'app
-            Image(uiImage: icon)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 40, height: 40)
-                .clipShape(Circle())
-                .overlay(alignment: .bottomTrailing) {
-                    AppEmblem(size: 17)
-                        .offset(x: 3, y: 3)
-                }
-        } else {
-            AppEmblem(size: 38)
-        }
-    }
 }
 
 // MARK: - Édition d'un modèle
@@ -213,13 +162,6 @@ struct TemplateEditor: View {
     let original: NotifTemplate
     let isNew: Bool
     @State private var draft: NotifTemplate
-    @State private var previewImage: UIImage?
-    @State private var iconImage: UIImage?
-    @State private var photo: PhotosPickerItem?
-    @State private var iconPhoto: PhotosPickerItem?
-    @State private var loadingImage = false
-    @State private var iconColor = 1
-    @State private var iconSymbol: String?      // dernier symbole généré ("" = initiales)
 
     private static let emojis = ["💬", "📷", "💳", "💰", "🔔", "✅", "⚠️", "🎉", "❤️", "⭐️", "📸", "🛒", "🔥", "👋"]
 
@@ -227,27 +169,34 @@ struct TemplateEditor: View {
         self.original = original
         self.isNew = isNew
         _draft = State(initialValue: original)
-        _previewImage = State(initialValue: ImageStore.load(original.imageFile))
-        _iconImage = State(initialValue: ImageStore.load(original.iconFile))
-    }
-
-    private var initials: String {
-        IconMaker.initials(from: draft.title)
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    NotificationPreview(title: draft.displayTitle, subtitle: draft.subtitle,
-                                        message: draft.body, image: previewImage, icon: iconImage,
-                                        appIcon: WebPersonas.slot(draft.personaID)?.preview)
+                    NotificationPreview(title: draft.displayTitle, subtitle: draft.subtitle, message: draft.body,
+                                        slot: WebPersonas.slot(draft.personaID ?? WebPersonas.defaultSender))
                         .animation(.easeInOut(duration: 0.2), value: draft)
                         .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                         .listRowBackground(Color.clear)
                 } header: {
                     Text("Aperçu")
                 }
+
+                Section {
+                    Picker("Expéditeur", selection: $draft.personaID) {
+                        Text(senderLabel(WebPersonas.defaultSender)).tag(String?.none)
+                        ForEach(WebPersonas.slots.filter { $0.id != WebPersonas.defaultSender }) { slot in
+                            Text(senderLabel(slot.id)).tag(Optional(slot.id))
+                        }
+                    }
+                } header: {
+                    Text("Expéditeur")
+                } footer: {
+                    Text("La notification arrive depuis cette appli, avec son icône et son nom. À installer une fois dans Configurations › Applis expéditrices.")
+                }
+                .listRowBackground(BW.hull)
 
                 Section("Contenu") {
                     TextField("Titre (ou nom de l'expéditeur)", text: $draft.title)
@@ -268,50 +217,6 @@ struct TemplateEditor: View {
                                 }
                                 .buttonStyle(.plain)
                             }
-                        }
-                    }
-                }
-                .listRowBackground(BW.hull)
-
-                Section {
-                    Picker("Expéditeur", selection: $draft.personaID) {
-                        Text("Nova").tag(String?.none)
-                        ForEach(WebPersonas.slots) { slot in
-                            Text(store.persona(slot.id)?.name ?? slot.label + " (non installé)")
-                                .tag(Optional(slot.id))
-                        }
-                    }
-                } header: {
-                    Text("Expéditeur")
-                } footer: {
-                    Text("En affichage « Applis web », la notification arrive depuis cette appli, avec son icône et son nom (l'aperçu ci-dessus la montre). À installer une fois dans Configurations › Applis expéditrices.")
-                }
-                .listRowBackground(BW.hull)
-
-                iconSection
-
-
-                Section("Image jointe") {
-                    if let previewImage {
-                        Image(uiImage: previewImage)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(height: 150)
-                            .frame(maxWidth: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    }
-                    PhotosPicker(selection: $photo, matching: .images) {
-                        HStack {
-                            Label(draft.imageFile == nil ? "Choisir une image" : "Changer l'image", systemImage: "photo")
-                            if loadingImage {
-                                Spacer()
-                                ProgressView()
-                            }
-                        }
-                    }
-                    if draft.imageFile != nil {
-                        Button(role: .destructive) { setFile(\.imageFile, nil) } label: {
-                            Label("Retirer l'image", systemImage: "trash")
                         }
                     }
                 }
@@ -348,176 +253,22 @@ struct TemplateEditor: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Annuler") { cancel() }
+                    Button("Annuler") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Enregistrer") { save() }
-                        .disabled(draft.isEmpty)
+                    Button("Enregistrer") {
+                        store.upsertTemplate(draft)
+                        dismiss()
+                    }
+                    .disabled(draft.isEmpty)
                 }
-            }
-            .onChange(of: photo) { item in
-                guard let item else { return }
-                Task { await loadPhoto(item, into: \.imageFile, maxSide: 1200) }
-            }
-            .onChange(of: iconPhoto) { item in
-                guard let item else { return }
-                Task { await loadPhoto(item, into: \.iconFile, maxSide: 400) }
             }
         }
         .interactiveDismissDisabled(draft != original)
     }
 
-    // MARK: Icône
-
-    private var iconSection: some View {
-        Section {
-            HStack(spacing: 14) {
-                if let iconImage {
-                    Image(uiImage: iconImage)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 52, height: 52)
-                        .clipShape(Circle())
-                } else {
-                    AppEmblem(size: 52)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(iconImage == nil ? "Icône de l'app" : "Icône personnalisée")
-                        .font(.subheadline.weight(.semibold))
-                    Text("Choisis une photo ou crée une icône ci-dessous.")
-                        .font(.caption)
-                        .foregroundStyle(BW.mist)
-                }
-            }
-
-            PhotosPicker(selection: $iconPhoto, matching: .images) {
-                Label("Choisir une photo", systemImage: "person.crop.circle")
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Créer une icône").font(.subheadline)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(IconMaker.colors.indices, id: \.self) { i in
-                            Button {
-                                iconColor = i
-                                if let iconSymbol { generateIcon(symbol: iconSymbol) }
-                            } label: {
-                                Circle()
-                                    .fill(Color(IconMaker.colors[i]))
-                                    .frame(width: 28, height: 28)
-                                    .overlay(Circle().strokeBorder(Color.white, lineWidth: iconColor == i ? 2.5 : 0))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        Button { generateIcon(symbol: "") } label: {
-                            symbolTile(Text(initials.isEmpty ? "Aa" : initials)
-                                .font(.system(size: 15, weight: .semibold, design: .rounded)))
-                        }
-                        .buttonStyle(.plain)
-                        ForEach(IconMaker.symbols, id: \.self) { s in
-                            Button { generateIcon(symbol: s) } label: {
-                                symbolTile(Image(systemName: s).font(.system(size: 16, weight: .semibold)))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-            }
-
-            if draft.iconFile != nil {
-                Button(role: .destructive) {
-                    iconSymbol = nil
-                    setFile(\.iconFile, nil)
-                } label: {
-                    Label("Retirer l'icône", systemImage: "trash")
-                }
-            }
-        } header: {
-            Text("Icône")
-        } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Comme dans les messageries : l'icône s'affiche en rond à gauche de la notification, avec le petit logo de Nova dans le coin. Le titre sert de nom d'expéditeur.")
-                switch IconSupport.current {
-                case .granted:
-                    Label("Autorisation iOS présente", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(BW.sea)
-                case .missing:
-                    Label("Autorisation iOS absente : les notifications garderont l'icône de Nova.", systemImage: "xmark.circle.fill")
-                        .foregroundStyle(BW.rust)
-                case .unknown:
-                    Label("Autorisation iOS : état inconnu.", systemImage: "questionmark.circle")
-                }
-                if let error = IconSupport.lastError {
-                    Text("Dernière erreur iOS : \(error)")
-                }
-            }
-        }
-        .listRowBackground(BW.hull)
-    }
-
-    private func symbolTile<V: View>(_ content: V) -> some View {
-        content
-            .foregroundStyle(.white)
-            .frame(width: 38, height: 38)
-            .background(Circle().fill(Color(IconMaker.colors[iconColor])))
-    }
-
-    private func generateIcon(symbol: String) {
-        iconSymbol = symbol
-        let image: UIImage
-        if symbol.isEmpty {
-            image = IconMaker.render(initials: initials.isEmpty ? "?" : initials, color: IconMaker.colors[iconColor])
-        } else {
-            image = IconMaker.render(symbol: symbol, color: IconMaker.colors[iconColor])
-        }
-        setFile(\.iconFile, ImageStore.save(image: image, maxSide: 256))
-    }
-
-    // MARK: Fichiers
-
-    private func setFile(_ keyPath: WritableKeyPath<NotifTemplate, String?>, _ name: String?) {
-        // Un fichier ajouté pendant cette édition puis remplacé n'est plus utile
-        if draft[keyPath: keyPath] != original[keyPath: keyPath] { ImageStore.delete(draft[keyPath: keyPath]) }
-        draft[keyPath: keyPath] = name
-        if keyPath == \NotifTemplate.iconFile {
-            iconImage = ImageStore.load(name)
-        } else {
-            previewImage = ImageStore.load(name)
-        }
-    }
-
-    private func loadPhoto(_ item: PhotosPickerItem, into keyPath: WritableKeyPath<NotifTemplate, String?>,
-                           maxSide: CGFloat) async {
-        loadingImage = true
-        if let data = try? await item.loadTransferable(type: Data.self),
-           let name = ImageStore.save(data, maxSide: maxSide) {
-            if keyPath == \NotifTemplate.iconFile { iconSymbol = nil }
-            setFile(keyPath, name)
-        } else {
-            store.message = "Impossible de charger cette image."
-        }
-        loadingImage = false
-        photo = nil
-        iconPhoto = nil
-    }
-
-    private func cancel() {
-        if draft.imageFile != original.imageFile { ImageStore.delete(draft.imageFile) }
-        if draft.iconFile != original.iconFile { ImageStore.delete(draft.iconFile) }
-        dismiss()
-    }
-
-    private func save() {
-        store.upsertTemplate(draft)
-        if original.imageFile != draft.imageFile { store.releaseImage(original.imageFile) }
-        if original.iconFile != draft.iconFile { store.releaseImage(original.iconFile) }
-        dismiss()
+    private func senderLabel(_ id: String) -> String {
+        if let persona = store.persona(id) { return persona.name }
+        return (WebPersonas.slot(id)?.label ?? id) + " (non installé)"
     }
 }

@@ -174,19 +174,6 @@ struct PulseDot: View {
     }
 }
 
-/// Emblème de l'app, utilisé dans l'aperçu des notifications.
-struct AppEmblem: View {
-    var size: CGFloat = 38
-
-    var body: some View {
-        Image("Emblem")
-            .resizable()
-            .scaledToFill()
-            .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: size * 0.225, style: .continuous))
-    }
-}
-
 /// Stepper de durée avec des paliers « ronds ».
 struct DurationStepper: View {
     let label: String

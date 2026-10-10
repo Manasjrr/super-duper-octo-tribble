@@ -129,13 +129,9 @@ struct ContentPicker {
             cursor += 1
         }
 
-        if config.mixContent && !pick.isRare {
-            if let b = normal.filter({ !$0.body.isEmpty }).randomElement() { pick.body = b.body }
-            let withImages = normal.filter { $0.imageFile != nil }
-            if !withImages.isEmpty {
-                // Une image sur deux environ, pour varier aussi les notifs sans image
-                pick.imageFile = Bool.random() ? withImages.randomElement()?.imageFile : nil
-            }
+        if config.mixContent && !pick.isRare,
+           let b = normal.filter({ !$0.body.isEmpty }).randomElement() {
+            pick.body = b.body
         }
 
         lastID = pick.id

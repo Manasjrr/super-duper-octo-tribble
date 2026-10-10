@@ -1,5 +1,4 @@
 import SwiftUI
-import UserNotifications
 
 struct ContentView: View {
     @StateObject private var store = AppStore()
@@ -20,15 +19,13 @@ struct ContentView: View {
         .tint(BW.gold)
         .preferredColorScheme(.dark)
         .task {
-            // Demande l'autorisation au premier lancement
-            await store.requestAuthorization()
+            await store.requestNotificationPermission()
+            store.resetAppIconIfNeeded()
             store.tick()
         }
         .onOpenURL { url in store.handle(url: url) }
         .onChange(of: scenePhase) { phase in
-            guard phase == .active else { return }
-            store.tick()
-            Task { await store.refreshAuthorization() }
+            if phase == .active { store.tick() }
         }
     }
 }
@@ -41,14 +38,11 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
-                    if store.authorization == .denied {
-                        AuthWarning()
+                VStack(spacing: 14) {
+                    if store.locationDenied {
+                        LocationWarning()
                     }
-                    if IconSupport.current == .missing && store.templates.contains(where: { $0.iconFile != nil }) {
-                        IconWarning()
-                    }
-                    if store.activeConfig?.webPush == true && store.personas.isEmpty {
+                    if store.personas.isEmpty {
                         NavigationLink {
                             PersonasView()
                         } label: {
@@ -56,7 +50,7 @@ struct HomeView: View {
                                 Label("Aucune appli expéditrice installée", systemImage: "app.badge")
                                     .font(BW.font(.headline, .semibold))
                                     .foregroundStyle(BW.gold)
-                                Text("La configuration est en affichage « Applis web ». Installe au moins un expéditeur pour avoir des icônes différentes.")
+                                Text("Installe au moins un expéditeur (Messages, Banque…) pour recevoir les notifications avec son icône. Sans expéditeur, elles arrivent depuis Nova.")
                                     .font(.footnote)
                                     .foregroundStyle(BW.mist)
                                     .multilineTextAlignment(.leading)
@@ -64,9 +58,6 @@ struct HomeView: View {
                             .bwCard()
                         }
                         .buttonStyle(.plain)
-                    }
-                    if store.activeConfig?.webPush != true && (store.activeConfig?.liveActivity == true || store.run?.isLive == true) {
-                        LiveDiagnostics()
                     }
                     if let run = store.run {
                         RunCard(run: run)
@@ -91,22 +82,24 @@ struct HomeView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .padding()
+                .padding(.horizontal)
+                .padding(.vertical, 10)
                 .animation(.easeInOut(duration: 0.35), value: store.run?.status)
             }
             .background(BWBackground())
             .navigationTitle("Nova")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
 
-private struct AuthWarning: View {
+private struct LocationWarning: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Notifications désactivées", systemImage: "bell.slash.fill")
+            Label("Localisation refusée", systemImage: "location.slash.fill")
                 .font(BW.font(.headline))
                 .foregroundStyle(BW.rust)
-            Text("Autorise les notifications de Nova dans Réglages pour que les envois fonctionnent.")
+            Text("Nova utilise la localisation uniquement pour rester active pendant un scénario et envoyer chaque notification à l'heure. Ta position n'est ni enregistrée ni envoyée.")
                 .font(.footnote)
                 .foregroundStyle(BW.mist)
             Button("Ouvrir Réglages") {
@@ -117,77 +110,6 @@ private struct AuthWarning: View {
             .buttonStyle(BWButtonStyle(color: BW.rust, filled: false))
         }
         .bwCard()
-    }
-}
-
-private struct IconWarning: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Icônes personnalisées indisponibles", systemImage: "person.crop.circle.badge.exclamationmark")
-                .font(BW.font(.headline, .semibold))
-                .foregroundStyle(BW.gold)
-            Text("Cette installation n'a pas reçu l'autorisation « Communication Notifications » (réservée aux comptes Apple payants) : iOS n'affiche pas une icône différente par notification. Deux solutions dans Configurations : l'affichage « Activité en direct » (une icône par envoi), ou une « Icône de l'app » pour tout le scénario.")
-                .font(.footnote)
-                .foregroundStyle(BW.mist)
-        }
-        .bwCard()
-    }
-}
-
-private struct LiveDiagnostics: View {
-    @EnvironmentObject var store: AppStore
-    @State private var expanded = false
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 2)) { _ in
-            let checks = LiveMode.diagnostics()
-            let allOK = checks.allSatisfy(\.ok)
-            VStack(alignment: .leading, spacing: 10) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
-                } label: {
-                    HStack {
-                        Label("Activité en direct", systemImage: allOK ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .font(BW.font(.headline, .semibold))
-                            .foregroundStyle(allOK ? BW.sea : BW.gold)
-                        Spacer()
-                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                            .font(.caption)
-                            .foregroundStyle(BW.mist)
-                    }
-                }
-                .buttonStyle(.plain)
-
-                if expanded || !LiveMode.extensionInstalled {
-                    ForEach(checks) { check in
-                        HStack(alignment: .firstTextBaseline) {
-                            Image(systemName: check.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundStyle(check.ok ? BW.sea : BW.rust)
-                            Text(check.label)
-                            Spacer()
-                            Text(check.detail)
-                                .foregroundStyle(BW.mist)
-                                .multilineTextAlignment(.trailing)
-                        }
-                        .font(.footnote)
-                    }
-                    if !LiveMode.extensionInstalled {
-                        Text("Sans l'extension, iOS fait vibrer le téléphone mais n'a rien à afficher. Réinstalle Nova.ipa avec SideStore et, quand il demande quoi faire des extensions, choisis de les garder.")
-                            .font(.caption)
-                            .foregroundStyle(BW.gold)
-                    }
-                    Button {
-                        if let t = store.pool(for: store.activeConfig ?? SendConfig()).first {
-                            store.message = LiveMode.test(t)
-                        }
-                    } label: {
-                        Label("Afficher une activité de test", systemImage: "rectangle.badge.checkmark")
-                    }
-                    .buttonStyle(BWButtonStyle(filled: false))
-                }
-            }
-            .bwCard()
-        }
     }
 }
 
@@ -354,32 +276,16 @@ private struct QuickSettings: View {
 
                 Toggle("Tirage aléatoire des modèles", isOn: $config.randomPick)
 
-                VStack(alignment: .leading, spacing: 12) {
-                    Picker("Affichage", selection: Binding(
-                        get: { config.webPush ? 2 : (config.liveActivity ? 1 : 0) },
-                        set: { v in
-                            config.liveActivity = v == 1
-                            config.webPush = v == 2
-                        })) {
-                        Text("Notifications").tag(0)
-                        Text("Applis web").tag(2)
-                        Text("Activité").tag(1)
+                NavigationLink {
+                    PersonasView()
+                } label: {
+                    HStack {
+                        Label("Applis expéditrices : \(store.personas.count)/\(WebPersonas.slots.count) installées",
+                              systemImage: "app.badge")
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption)
                     }
-                    .pickerStyle(.segmented)
-
-                    if config.webPush {
-                        NavigationLink {
-                            PersonasView()
-                        } label: {
-                            HStack {
-                                Label("Applis expéditrices : \(store.personas.count)/\(WebPersonas.slots.count) installées",
-                                      systemImage: "app.badge")
-                                Spacer()
-                                Image(systemName: "chevron.right").font(.caption)
-                            }
-                            .font(.subheadline)
-                        }
-                    }
+                    .font(.subheadline)
                 }
 
                 Divider().overlay(BW.gold.opacity(0.25))
@@ -395,10 +301,6 @@ private struct QuickSettings: View {
                         Label("Avec ces intervalles, la durée réelle sera d'environ \(formatDuration(min(max(config.totalDuration, possible.lowerBound), possible.upperBound))).",
                               systemImage: "exclamationmark.triangle")
                             .foregroundStyle(BW.gold)
-                    }
-                    if config.count > AppStore.pendingLimit {
-                        Label("iOS limite les notifications programmées : ouvre l'app de temps en temps pour que la suite soit envoyée.",
-                              systemImage: "info.circle")
                     }
                 }
                 .font(.caption)

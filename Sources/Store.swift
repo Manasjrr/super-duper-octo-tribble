@@ -1,6 +1,5 @@
 import SwiftUI
 import UserNotifications
-import Intents
 
 // MARK: - Sauvegarde
 
@@ -31,8 +30,6 @@ private struct SavedState: Codable {
 
 @MainActor
 final class AppStore: ObservableObject {
-    /// iOS limite à 64 notifications en attente par app : on garde une marge.
-    static let pendingLimit = 58
     static let historyLimit = 200
 
     @Published var templates: [NotifTemplate] = [] { didSet { save() } }
@@ -42,13 +39,13 @@ final class AppStore: ObservableObject {
     @Published var history: [HistoryEntry] = [] { didSet { save() } }
     @Published var personas: [Persona] = [] { didSet { save() } }
     @Published var webBaseURL = WebPersonas.defaultBaseURL { didSet { save() } }
-    @Published var authorization: UNAuthorizationStatus = .notDetermined
+    @Published var locationDenied = false
     @Published var message: String?
 
     private var loading = true
     private var timer: Timer?
-    private let fileURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("etat.json")
+    private static let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    private let fileURL = AppStore.documents.appendingPathComponent("etat.json")
 
     init() {
         if let data = try? Data(contentsOf: fileURL),
@@ -64,17 +61,8 @@ final class AppStore: ObservableObject {
             templates = Presets.makeTemplates()
             configs = Presets.configs
         }
+        migrate()
         if configs.isEmpty { configs = Presets.configs }
-        // Nouveaux exemples (applis expéditrices) proposés aux installations existantes, une seule fois
-        let presetsKey = "versionExemples"
-        if UserDefaults.standard.integer(forKey: presetsKey) < Presets.version {
-            var t = templates
-            var c = configs
-            if let webConfig = Presets.merge(templates: &t, configs: &c) { activeConfigID = webConfig }
-            templates = t
-            configs = c
-            UserDefaults.standard.set(Presets.version, forKey: presetsKey)
-        }
         if activeConfigID == nil || !configs.contains(where: { $0.id == activeConfigID }) {
             activeConfigID = configs.first?.id
         }
@@ -87,6 +75,36 @@ final class AppStore: ObservableObject {
         }
         RunLoop.main.add(t, forMode: .common)
         timer = t
+    }
+
+    /// Mises à jour des données des versions précédentes (une seule fois chacune).
+    private func migrate() {
+        let key = "versionExemples"
+        let stored = UserDefaults.standard.integer(forKey: key)
+        guard stored < Presets.version else { return }
+
+        if stored < 3 {
+            // Fin des anciens modes : les configurations « Applis web · … » deviennent des configurations normales
+            let renames = ["Applis web · test rapide": "Test rapide", "Applis web · 12 en 5 min": "Aléatoire · 12 en 5 min"]
+            for (old, new) in renames {
+                guard let i = configs.firstIndex(where: { $0.name == old }) else { continue }
+                if let other = configs.first(where: { $0.name == new }) {
+                    if activeConfigID == configs[i].id { activeConfigID = other.id }
+                    configs.remove(at: i)
+                } else {
+                    configs[i].name = new
+                }
+            }
+            // Les icônes et images des modèles ne sont plus utilisées
+            try? FileManager.default.removeItem(at: Self.documents.appendingPathComponent("Images"))
+        }
+
+        var t = templates
+        var c = configs
+        if let added = Presets.merge(templates: &t, configs: &c), stored < 2 { activeConfigID = added }
+        templates = t
+        configs = c
+        UserDefaults.standard.set(Presets.version, forKey: key)
     }
 
     private func save() {
@@ -104,18 +122,20 @@ final class AppStore: ObservableObject {
         }
     }
 
-    // MARK: Autorisation
+    // MARK: Autorisations
 
-    func requestAuthorization() async {
+    /// Notifications classiques : utilisées seulement en secours, si un envoi web échoue.
+    func requestNotificationPermission() async {
         _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
-        await refreshAuthorization()
     }
 
-    func refreshAuthorization() async {
-        authorization = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    /// Les anciennes versions pouvaient changer l'icône de Nova : on remet l'icône d'origine.
+    func resetAppIconIfNeeded() {
+        guard UIApplication.shared.alternateIconName != nil else { return }
+        UIApplication.shared.setAlternateIconName(nil, completionHandler: nil)
     }
 
-    // MARK: Messages
+    // MARK: Modèles
 
     func upsertTemplate(_ t: NotifTemplate) {
         if let i = templates.firstIndex(where: { $0.id == t.id }) {
@@ -127,8 +147,6 @@ final class AppStore: ObservableObject {
 
     func deleteTemplate(_ t: NotifTemplate) {
         templates.removeAll { $0.id == t.id }
-        releaseImage(t.imageFile)
-        releaseImage(t.iconFile)
         for i in configs.indices where configs[i].templateIDs.contains(t.id) {
             configs[i].templateIDs.removeAll { $0 == t.id }
         }
@@ -138,19 +156,11 @@ final class AppStore: ObservableObject {
         var copy = t
         copy.id = UUID()
         copy.title = t.title.isEmpty ? t.title : t.title + " (copie)"
-        copy.imageFile = ImageStore.copy(t.imageFile)
-        copy.iconFile = ImageStore.copy(t.iconFile)
         if let i = templates.firstIndex(where: { $0.id == t.id }) {
             templates.insert(copy, at: i + 1)
         } else {
             templates.append(copy)
         }
-    }
-
-    /// Supprime le fichier image s'il n'est plus utilisé par aucun message.
-    func releaseImage(_ name: String?) {
-        guard let name, !templates.contains(where: { $0.imageFile == name || $0.iconFile == name }) else { return }
-        ImageStore.delete(name)
     }
 
     // MARK: Configurations
@@ -201,7 +211,7 @@ final class AppStore: ObservableObject {
         configs = c
     }
 
-    /// Messages utilisés par une config (tous si aucune sélection).
+    /// Modèles utilisés par une config (tous si aucune sélection).
     func pool(for config: SendConfig) -> [NotifTemplate] {
         let usable = templates.filter { !$0.isEmpty }
         let selected = usable.filter { config.templateIDs.contains($0.id) }
@@ -212,13 +222,13 @@ final class AppStore: ObservableObject {
 
     func start() {
         guard let config = activeConfig else { return }
-        if authorization == .denied && !config.webPush && !config.liveActivity {
-            message = "Les notifications sont désactivées dans Réglages."
-            return
-        }
         let pool = pool(for: config)
         guard !pool.isEmpty else {
             message = "Ajoute au moins un modèle avant de démarrer."
+            return
+        }
+        guard !KeepAlive.shared.isDenied else {
+            message = "Nova a besoin de la localisation pour rester active pendant le scénario (Réglages › Nova › Position)."
             return
         }
         if run?.isActive == true { stop() }
@@ -229,41 +239,20 @@ final class AppStore: ObservableObject {
             guard let t = picker.next() else { return nil }
             return PlannedNotif(fireDate: now.addingTimeInterval(offset),
                                 title: t.displayTitle, subtitle: t.subtitle, body: t.body,
-                                imageFile: t.imageFile, iconFile: t.iconFile, personaID: t.personaID,
-                                isRare: t.isRare)
+                                personaID: t.personaID, isRare: t.isRare)
         }
-        if config.webPush {
-            guard !KeepAlive.shared.isDenied else {
-                message = "L'affichage « Applis web » a besoin de la localisation pour garder Nova active (Réglages > Nova > Position)."
-                return
-            }
-            KeepAlive.shared.start()
-        } else if config.liveActivity, let error = LiveMode.start(configName: config.name, total: items.count) {
-            message = error
-            return
-        }
+        KeepAlive.shared.start()
         message = nil
-        run = Run(configName: config.name, items: items, plannedCount: items.count,
-                  live: config.liveActivity && !config.webPush ? true : nil, liveArchive: config.liveArchive,
-                  web: config.webPush ? true : nil)
+        run = Run(configName: config.name, items: items, plannedCount: items.count)
         tick()
-        AppIcons.apply(config.appIcon) { [weak self] error in
-            if let error { self?.message = "Icône de l'app non changée : \(error)" }
-        }
     }
 
     func pause() {
         guard var r = run, r.status == .running else { return }
-        let now = Date()
-        Notifier.cancel(r.items.filter { $0.scheduled && $0.fireDate > now }.map(\.id))
-        for i in r.items.indices where r.items[i].fireDate > now {
-            r.items[i].scheduled = false
-        }
         r.status = .paused
-        r.pausedAt = now
+        r.pausedAt = Date()
         run = r
-        if r.isLive { LiveMode.pause() }
-        if r.isWeb { KeepAlive.shared.stop() }
+        KeepAlive.shared.stop()
     }
 
     func resume() {
@@ -275,22 +264,19 @@ final class AppStore: ObservableObject {
         r.status = .running
         r.pausedAt = nil
         run = r
-        if r.isLive { LiveMode.resume() }
-        if r.isWeb { KeepAlive.shared.start() }
+        KeepAlive.shared.start()
         tick()
     }
 
     func stop() {
         guard var r = run, r.isActive else { return }
         let ref = r.pausedAt ?? Date()
-        Notifier.cancel(r.items.filter { $0.scheduled && $0.fireDate > ref }.map(\.id))
         r.items.removeAll { $0.fireDate > ref }
         r.status = .stopped
         r.pausedAt = nil
         r.endedAt = Date()
         run = r
-        if r.isLive { LiveMode.end(immediately: true) }
-        if r.isWeb { KeepAlive.shared.stop() }
+        KeepAlive.shared.stop()
         tick()
     }
 
@@ -299,51 +285,26 @@ final class AppStore: ObservableObject {
         run = nil
     }
 
-    /// Appelé régulièrement : programme la suite, rattrape le retard, tient le journal.
+    /// Appelé chaque seconde : envoie ce qui arrive à échéance et tient l'historique.
     func tick() {
+        let denied = KeepAlive.shared.isDenied
+        if denied != locationDenied { locationDenied = denied }
+
         guard var r = run else { return }
         let now = Date()
 
-        if r.status == .running && r.isLive {
-            // Activité en direct : on « livre » les envois arrivés à échéance (le dernier est affiché).
-            let due = r.items.indices.filter { !r.items[$0].scheduled && r.items[$0].fireDate <= now }
-            if let last = due.last {
-                for i in due { r.items[i].scheduled = true }
-                LiveMode.show(r.items[last], sent: r.sent(at: now), total: r.plannedCount,
-                              archive: r.liveArchive != false)
-            }
-        } else if r.status == .running && r.isWeb {
-            // Applis web : Nova envoie chaque push à l'heure prévue (si Nova a été suspendue,
-            // on n'envoie que les 3 derniers en retard pour éviter une rafale).
+        if r.status == .running {
+            // Si Nova a été suspendue, on n'envoie que les 3 derniers en retard pour éviter une rafale.
             let due = r.items.indices.filter { !r.items[$0].scheduled && r.items[$0].fireDate <= now }
             for i in due { r.items[i].scheduled = true }
-            for i in due.suffix(3) { deliverWeb(r.items[i]) }
-        } else if r.status == .running {
-            // Des notifs non programmées sont passées (app fermée trop longtemps) : on décale la suite.
-            if let idx = r.items.firstIndex(where: { !$0.scheduled && $0.fireDate <= now }) {
-                let delta = now.addingTimeInterval(2).timeIntervalSince(r.items[idx].fireDate)
-                for i in idx..<r.items.count where !r.items[i].scheduled {
-                    r.items[i].fireDate += delta
-                }
-            }
-            // On remplit la file d'attente iOS dans la limite autorisée.
-            var budget = Self.pendingLimit - r.items.filter { $0.scheduled && $0.fireDate > now }.count
-            for i in r.items.indices where budget > 0 && !r.items[i].scheduled {
-                let it = r.items[i]
-                Notifier.schedule(id: it.id, title: it.title, subtitle: it.subtitle, body: it.body,
-                                  imageFile: it.imageFile, iconFile: it.iconFile, at: it.fireDate)
-                r.items[i].scheduled = true
-                budget -= 1
-            }
+            for i in due.suffix(3) { deliver(r.items[i]) }
         }
 
-        // Journal
         var newEntries: [HistoryEntry] = []
         for i in r.items.indices where r.items[i].scheduled && !r.items[i].logged && r.items[i].fireDate <= now {
             let it = r.items[i]
             newEntries.append(HistoryEntry(date: it.fireDate, title: it.title, body: it.body,
-                                           imageFile: it.imageFile, iconFile: it.iconFile,
-                                           personaID: r.isWeb ? it.personaID : nil, isRare: it.isRare))
+                                           personaID: it.personaID ?? WebPersonas.defaultSender, isRare: it.isRare))
             r.items[i].logged = true
         }
         if !newEntries.isEmpty { addHistory(newEntries) }
@@ -351,35 +312,61 @@ final class AppStore: ObservableObject {
         if r.status == .running && r.items.allSatisfy({ $0.scheduled && $0.fireDate <= now }) {
             r.status = .finished
             r.endedAt = r.items.last?.fireDate ?? now
-            if r.isLive { LiveMode.end(immediately: false) }
-            if r.isWeb { KeepAlive.shared.stop() }
+            KeepAlive.shared.stop()
         }
 
         if r != run { run = r }
     }
 
-    // MARK: Applis web expéditrices
+    // MARK: Envoi
+
+    /// Envoie par l'appli expéditrice du modèle (Nova par défaut), sinon en notification classique.
+    private func deliver(_ item: PlannedNotif) {
+        send(title: item.title, subtitle: item.subtitle, body: item.body, personaID: item.personaID)
+    }
+
+    private func send(title: String, subtitle: String, body: String, personaID: String?) {
+        guard let target = persona(personaID ?? WebPersonas.defaultSender) else {
+            Notifier.show(title: title, subtitle: subtitle, body: body)
+            return
+        }
+        WebPush.send(to: target, title: title, subtitle: subtitle, body: body,
+                     id: UUID().uuidString) { [weak self] ok, detail in
+            self?.setPersonaStatus(target.id, ok ? nil : detail)
+            if !ok {
+                // Secours : la notification part quand même, avec l'icône de Nova
+                Notifier.show(title: title, subtitle: subtitle, body: body)
+            }
+        }
+    }
+
+    func sendTest(_ template: NotifTemplate? = nil) {
+        var t = template
+        if t == nil, let config = activeConfig {
+            var picker = ContentPicker(pool: pool(for: config), config: config)
+            t = picker.next()
+        }
+        guard let t, !t.isEmpty else {
+            message = "Aucun modèle à tester."
+            return
+        }
+        send(title: t.displayTitle, subtitle: t.subtitle, body: t.body, personaID: t.personaID)
+        addHistory([HistoryEntry(date: Date(), title: t.displayTitle, body: t.body,
+                                 personaID: t.personaID ?? WebPersonas.defaultSender, isTest: true, isRare: t.isRare)])
+        message = nil
+    }
+
+    private func addHistory(_ entries: [HistoryEntry]) {
+        var h = history + entries
+        h.sort { $0.date > $1.date }
+        if h.count > Self.historyLimit { h.removeLast(h.count - Self.historyLimit) }
+        history = h
+    }
+
+    // MARK: Applis expéditrices
 
     func persona(_ id: String?) -> Persona? {
         personas.first { $0.id == id }
-    }
-
-    /// Envoie une notification par l'appli web du modèle, sinon en notification normale.
-    private func deliverWeb(_ item: PlannedNotif) {
-        guard let persona = self.persona(item.personaID) else {
-            Notifier.schedule(id: item.id, title: item.title, subtitle: item.subtitle, body: item.body,
-                              imageFile: item.imageFile, iconFile: item.iconFile, at: Date())
-            return
-        }
-        WebPush.send(to: persona, title: item.title, subtitle: item.subtitle, body: item.body,
-                     id: item.id.uuidString) { [weak self] ok, detail in
-            self?.setPersonaStatus(persona.id, ok ? nil : detail)
-            if !ok {
-                // Secours : la notification part quand même, avec l'icône de Nova
-                Notifier.schedule(id: item.id, title: item.title, subtitle: item.subtitle, body: item.body,
-                                  imageFile: item.imageFile, iconFile: item.iconFile, at: Date())
-            }
-        }
     }
 
     private func setPersonaStatus(_ id: String, _ status: String?) {
@@ -388,11 +375,11 @@ final class AppStore: ObservableObject {
     }
 
     func testPersona(_ id: String) {
-        guard let persona = self.persona(id) else { return }
-        WebPush.send(to: persona, title: persona.name, subtitle: "", body: "Notification de test envoyée par Nova",
+        guard let target = persona(id) else { return }
+        WebPush.send(to: target, title: target.name, subtitle: "", body: "Notification de test envoyée par Nova",
                      id: UUID().uuidString) { [weak self] ok, detail in
             self?.setPersonaStatus(id, ok ? nil : detail)
-            self?.message = ok ? nil : "Échec de l'envoi vers « \(persona.name) » : \(detail)"
+            self?.message = ok ? nil : "Échec de l'envoi vers « \(target.name) » : \(detail)"
         }
     }
 
@@ -431,244 +418,19 @@ final class AppStore: ObservableObject {
             return
         }
     }
-
-    // MARK: Test immédiat
-
-    func sendTest(_ template: NotifTemplate? = nil) {
-        var t = template
-        if t == nil, let config = activeConfig {
-            var picker = ContentPicker(pool: pool(for: config), config: config)
-            t = picker.next()
-        }
-        guard let t, !t.isEmpty else {
-            message = "Aucun modèle à tester."
-            return
-        }
-        let date = Date().addingTimeInterval(1)
-        if let persona = self.persona(t.personaID) {
-            WebPush.send(to: persona, title: t.displayTitle, subtitle: t.subtitle, body: t.body,
-                         id: UUID().uuidString) { [weak self] ok, detail in
-                self?.setPersonaStatus(persona.id, ok ? nil : detail)
-                if !ok { self?.message = "Échec de l'envoi vers « \(persona.name) » : \(detail)" }
-            }
-            addHistory([HistoryEntry(date: date, title: t.displayTitle, body: t.body,
-                                     imageFile: t.imageFile, iconFile: t.iconFile, personaID: persona.id,
-                                     isTest: true, isRare: t.isRare)])
-            message = nil
-            return
-        }
-        Notifier.schedule(id: UUID(), title: t.displayTitle, subtitle: t.subtitle, body: t.body,
-                          imageFile: t.imageFile, iconFile: t.iconFile, at: date)
-        addHistory([HistoryEntry(date: date, title: t.displayTitle, body: t.body,
-                                 imageFile: t.imageFile, iconFile: t.iconFile, isTest: true, isRare: t.isRare)])
-        message = nil
-    }
-
-    private func addHistory(_ entries: [HistoryEntry]) {
-        var h = history + entries
-        h.sort { $0.date > $1.date }
-        if h.count > Self.historyLimit { h.removeLast(h.count - Self.historyLimit) }
-        history = h
-    }
 }
 
-// MARK: - Envoi des notifications
+// MARK: - Notification classique (secours)
 
 enum Notifier {
-    static func schedule(id: UUID, title: String, subtitle: String, body: String,
-                         imageFile: String?, iconFile: String?, at date: Date, passive: Bool = false) {
+    /// Affiche tout de suite une notification de Nova.
+    static func show(title: String, subtitle: String, body: String) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.subtitle = subtitle
         content.body = body
-        if passive {
-            // Rangée dans le centre de notifications sans son, sans vibration ni bannière
-            content.interruptionLevel = .passive
-        } else {
-            content.sound = .default
-        }
-        if let attachment = ImageStore.attachment(imageFile) {
-            content.attachments = [attachment]
-        }
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, date.timeIntervalSinceNow),
-                                                        repeats: false)
-        func add(_ c: UNNotificationContent) {
-            let request = UNNotificationRequest(identifier: id.uuidString, content: c, trigger: trigger)
-            UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
-        }
-
-        guard let iconFile, let iconData = ImageStore.data(iconFile) else {
-            add(content)
-            return
-        }
-
-        // Notification de communication : l'icône personnalisée remplace celle de l'app
-        // (en rond, avec le petit logo de l'app dans le coin), comme les messageries.
-        let avatar = INImage(imageData: iconData)
-        let key = "nova-" + iconFile
-        let sender = INPerson(personHandle: INPersonHandle(value: key, type: .unknown),
-                              nameComponents: nil,
-                              displayName: title,
-                              image: avatar,
-                              contactIdentifier: nil,
-                              customIdentifier: key)
-        let intent = INSendMessageIntent(recipients: nil,
-                                         outgoingMessageType: .outgoingMessageText,
-                                         content: body,
-                                         speakableGroupName: nil,
-                                         conversationIdentifier: key,
-                                         serviceName: nil,
-                                         sender: sender,
-                                         attachments: nil)
-        intent.setImage(avatar, forParameterNamed: \INSendMessageIntent.sender)
-        let interaction = INInteraction(intent: intent, response: nil)
-        interaction.direction = .incoming
-        interaction.donate { _ in
-            // Sans l'autorisation « Communication Notifications », iOS refuse : on envoie la version normale.
-            do {
-                let updated = try content.updating(from: intent)
-                add(updated)
-                UserDefaults.standard.removeObject(forKey: lastIconErrorKey)
-            } catch {
-                add(content)
-                UserDefaults.standard.set(error.localizedDescription, forKey: lastIconErrorKey)
-            }
-        }
-    }
-
-    static let lastIconErrorKey = "derniereErreurIcone"
-
-    static func cancel(_ ids: [UUID]) {
-        guard !ids.isEmpty else { return }
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids.map(\.uuidString))
-    }
-}
-
-// MARK: - Diagnostic des icônes personnalisées
-
-enum IconSupport {
-    case granted    // le profil de signature contient l'autorisation
-    case missing    // installée sans l'autorisation (cas de SideStore avec un compte gratuit)
-    case unknown    // pas de profil lisible
-
-    /// Lit le profil de signature installé avec l'app (embedded.mobileprovision).
-    static let current: IconSupport = {
-        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
-              let data = try? Data(contentsOf: url) else { return .unknown }
-        let text = String(decoding: data, as: UTF8.self)
-        return text.contains("com.apple.developer.usernotifications.communication") ? .granted : .missing
-    }()
-
-    static var lastError: String? {
-        UserDefaults.standard.string(forKey: Notifier.lastIconErrorKey)
-    }
-}
-
-// MARK: - Images
-
-enum ImageStore {
-    private static let cache = NSCache<NSString, UIImage>()
-
-    static var folder: URL {
-        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Images", isDirectory: true)
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-
-    static func url(_ name: String) -> URL { folder.appendingPathComponent(name) }
-
-    /// Redimensionne, compresse et enregistre une image. Renvoie son nom de fichier.
-    static func save(_ data: Data, maxSide: CGFloat = 1200) -> String? {
-        guard let image = UIImage(data: data) else { return nil }
-        return save(image: image, maxSide: maxSide)
-    }
-
-    static func save(image: UIImage, maxSide: CGFloat = 1200) -> String? {
-        let scale = min(1, maxSide / max(image.size.width, image.size.height))
-        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = 1
-        let resized = UIGraphicsImageRenderer(size: size, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: size))
-        }
-        guard let jpg = resized.jpegData(compressionQuality: 0.85) else { return nil }
-        let name = UUID().uuidString + ".jpg"
-        do {
-            try jpg.write(to: url(name))
-            return name
-        } catch {
-            return nil
-        }
-    }
-
-    static func load(_ name: String?) -> UIImage? {
-        guard let name else { return nil }
-        if let cached = cache.object(forKey: name as NSString) { return cached }
-        guard let image = UIImage(contentsOfFile: url(name).path) else { return nil }
-        cache.setObject(image, forKey: name as NSString)
-        return image
-    }
-
-    /// Vignette carrée très légère (pour les Activités en direct, limitées à 4 Ko).
-    static func thumbnailData(_ name: String?, side: CGFloat) -> Data? {
-        guard let image = load(name), image.size.width > 0, image.size.height > 0 else { return nil }
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = 1
-        format.opaque = true
-        let size = CGSize(width: side, height: side)
-        let scale = max(side / image.size.width, side / image.size.height)
-        let drawn = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        let thumb = UIGraphicsImageRenderer(size: size, format: format).image { _ in
-            image.draw(in: CGRect(x: (side - drawn.width) / 2, y: (side - drawn.height) / 2,
-                                  width: drawn.width, height: drawn.height))
-        }
-        return thumb.jpegData(compressionQuality: 0.6)
-    }
-
-    /// Réduit une vignette JPEG déjà encodée.
-    static func shrinkJPEG(_ data: Data?, side: CGFloat) -> Data? {
-        guard let data, let image = UIImage(data: data) else { return nil }
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = 1
-        format.opaque = true
-        let size = CGSize(width: side, height: side)
-        let small = UIGraphicsImageRenderer(size: size, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: size))
-        }
-        return small.jpegData(compressionQuality: 0.5)
-    }
-
-    static func data(_ name: String) -> Data? {
-        try? Data(contentsOf: url(name))
-    }
-
-    static func copy(_ name: String?) -> String? {
-        guard let name else { return nil }
-        let newName = UUID().uuidString + ".jpg"
-        do {
-            try FileManager.default.copyItem(at: url(name), to: url(newName))
-            return newName
-        } catch {
-            return nil
-        }
-    }
-
-    static func delete(_ name: String?) {
-        guard let name else { return }
-        cache.removeObject(forKey: name as NSString)
-        try? FileManager.default.removeItem(at: url(name))
-    }
-
-    /// iOS déplace le fichier joint : on lui donne une copie temporaire.
-    static func attachment(_ name: String?) -> UNNotificationAttachment? {
-        guard let name, FileManager.default.fileExists(atPath: url(name).path) else { return nil }
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jpg")
-        do {
-            try FileManager.default.copyItem(at: url(name), to: tmp)
-            return try UNNotificationAttachment(identifier: name, url: tmp, options: nil)
-        } catch {
-            return nil
-        }
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
     }
 }

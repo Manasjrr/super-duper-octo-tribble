@@ -61,6 +61,7 @@ struct ConfigsView: View {
             }
             .bwForm()
             .navigationTitle("Configurations")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     EditButton()
@@ -166,68 +167,6 @@ struct ConfigEditor: View {
             .listRowBackground(BW.hull)
 
             Section {
-                Picker("Affichage", selection: displayMode) {
-                    Text("Notifications").tag(0)
-                    Text("Applis web").tag(2)
-                    Text("Activité").tag(1)
-                }
-                .pickerStyle(.segmented)
-                if config.liveActivity && !config.webPush {
-                    Toggle("Garder aussi dans le centre de notifications", isOn: $config.liveArchive)
-                }
-                if config.webPush {
-                    NavigationLink {
-                        PersonasView()
-                    } label: {
-                        Label("Applis expéditrices (\(store.personas.count) installée\(store.personas.count > 1 ? "s" : ""))",
-                              systemImage: "app.badge")
-                    }
-                }
-            } header: {
-                Text("Affichage")
-            } footer: {
-                Text(verbatim: displayFooter)
-            }
-            .listRowBackground(BW.hull)
-
-            Section {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 14) {
-                        ForEach(AppIcons.choices) { choice in
-                            let selected = config.appIcon == choice.name
-                            Button {
-                                config.appIcon = choice.name
-                            } label: {
-                                VStack(spacing: 6) {
-                                    Image(choice.preview)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: 54, height: 54)
-                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                                .strokeBorder(BW.gold, lineWidth: selected ? 2.5 : 0)
-                                                .padding(-4)
-                                        )
-                                    Text(choice.label)
-                                        .font(.caption2)
-                                        .foregroundStyle(selected ? BW.gold : BW.mist)
-                                }
-                                .padding(4)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-            } header: {
-                Text("Icône de l'app")
-            } footer: {
-                Text("Appliquée au démarrage du scénario : les notifications et l'écran d'accueil prennent cette icône. iOS affiche une petite alerte de confirmation à chaque changement. Choisis « Nova » pour revenir à l'icône d'origine.")
-            }
-            .listRowBackground(BW.hull)
-
-            Section {
                 RhythmPreview(offsets: sample)
                 Button {
                     regenerate()
@@ -244,7 +183,7 @@ struct ConfigEditor: View {
             Section {
                 Toggle("Tirage aléatoire", isOn: $config.randomPick)
                 Toggle("Éviter les répétitions", isOn: $config.avoidRepeats)
-                Toggle("Mélanger textes et images", isOn: $config.mixContent)
+                Toggle("Mélanger les textes", isOn: $config.mixContent)
                 if hasRare {
                     VStack(alignment: .leading) {
                         HStack {
@@ -328,31 +267,11 @@ struct ConfigEditor: View {
         config.templateIDs = Set(ids) == Set(all) ? [] : ids
     }
 
-    private var displayMode: Binding<Int> {
-        Binding(
-            get: { config.webPush ? 2 : (config.liveActivity ? 1 : 0) },
-            set: { v in
-                config.liveActivity = v == 1
-                config.webPush = v == 2
-            }
-        )
-    }
-
-    private var displayFooter: String {
-        if config.webPush {
-            return "Chaque modèle est envoyé par son appli expéditrice (Modèles › Expéditeur) : de vraies notifications, avec l'icône et le nom de l'appli, qui s'empilent normalement. Nova doit rester active pendant le scénario (localisation en arrière-plan, flèche bleue) et avoir Internet. Les modèles sans expéditeur partent en notification normale."
-        }
-        if config.liveActivity {
-            return "Chaque envoi s'affiche dans une Activité en direct dessinée comme une notification, avec l'icône ronde de chaque modèle. Une seule carte à la fois (dernier envoi + 2 précédents). Nova reste active grâce à la localisation. « Garder aussi » range chaque envoi en silence dans le centre de notifications."
-        }
-        return "Notifications iOS classiques : elles s'empilent et arrivent même si Nova est fermée, mais avec l'icône de l'app (ou l'« Icône de l'app » choisie ci-dessous)."
-    }
-
     private func tirageFooter(hasRare: Bool) -> String {
         var text = config.randomPick
             ? "Les modèles sont tirés au sort selon leur fréquence."
             : "Les modèles sont envoyés dans l'ordre de la liste."
-        text += " « Mélanger » combine le titre d'un modèle avec le texte et l'image d'autres modèles."
+        text += " « Mélanger » combine le titre d'un modèle avec le texte d'un autre."
         if !hasRare { text += " Marque un modèle comme rare pour activer les apparitions rares." }
         return text
     }
