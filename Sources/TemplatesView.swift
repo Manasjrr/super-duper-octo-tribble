@@ -84,6 +84,17 @@ private struct TemplateRow: View {
                     .font(.footnote)
                     .foregroundStyle(BW.mist)
                     .lineLimit(2)
+                if let slot = WebPersonas.slot(template.personaID) {
+                    HStack(spacing: 5) {
+                        Image(slot.preview)
+                            .resizable()
+                            .frame(width: 14, height: 14)
+                            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                        Text(slot.label)
+                    }
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(BW.mist)
+                }
             }
             Spacer(minLength: 0)
             if template.weight != 1 {
@@ -128,6 +139,7 @@ struct NotificationPreview: View {
     let message: String
     let image: UIImage?
     var icon: UIImage? = nil
+    var appIcon: String? = nil      // icône de l'appli expéditrice (image du catalogue)
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -169,7 +181,13 @@ struct NotificationPreview: View {
     }
 
     @ViewBuilder private var leading: some View {
-        if let icon {
+        if let appIcon {
+            Image(appIcon)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 38, height: 38)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        } else if let icon {
             // Rendu d'une notification de communication : icône ronde + petit logo de l'app
             Image(uiImage: icon)
                 .resizable()
@@ -203,7 +221,7 @@ struct TemplateEditor: View {
     @State private var iconColor = 1
     @State private var iconSymbol: String?      // dernier symbole généré ("" = initiales)
 
-    private static let emojis = ["💬", "📦", "💳", "📅", "🔔", "✅", "⚠️", "🎉", "❤️", "⭐️", "📸", "🛒", "🔥", "👋"]
+    private static let emojis = ["💬", "📷", "💳", "💰", "🔔", "✅", "⚠️", "🎉", "❤️", "⭐️", "📸", "🛒", "🔥", "👋"]
 
     init(original: NotifTemplate, isNew: Bool) {
         self.original = original
@@ -222,7 +240,8 @@ struct TemplateEditor: View {
             Form {
                 Section {
                     NotificationPreview(title: draft.displayTitle, subtitle: draft.subtitle,
-                                        message: draft.body, image: previewImage, icon: iconImage)
+                                        message: draft.body, image: previewImage, icon: iconImage,
+                                        appIcon: WebPersonas.slot(draft.personaID)?.preview)
                         .animation(.easeInOut(duration: 0.2), value: draft)
                         .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                         .listRowBackground(Color.clear)
@@ -254,8 +273,6 @@ struct TemplateEditor: View {
                 }
                 .listRowBackground(BW.hull)
 
-                iconSection
-
                 Section {
                     Picker("Expéditeur", selection: $draft.personaID) {
                         Text("Nova").tag(String?.none)
@@ -267,9 +284,12 @@ struct TemplateEditor: View {
                 } header: {
                     Text("Expéditeur")
                 } footer: {
-                    Text("Utilisé quand la configuration est en affichage « Applis web » : la notification arrive depuis cette appli, avec son icône et son nom. À installer dans Configurations › Applis expéditrices.")
+                    Text("En affichage « Applis web », la notification arrive depuis cette appli, avec son icône et son nom (l'aperçu ci-dessus la montre). À installer une fois dans Configurations › Applis expéditrices.")
                 }
                 .listRowBackground(BW.hull)
+
+                iconSection
+
 
                 Section("Image jointe") {
                     if let previewImage {

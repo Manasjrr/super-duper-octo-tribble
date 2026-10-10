@@ -16,9 +16,9 @@ enum IconMaker {
     ]
 
     static let symbols = [
-        "message.fill", "envelope.fill", "bell.fill", "phone.fill", "shippingbox.fill", "creditcard.fill",
-        "calendar", "heart.fill", "cart.fill", "person.fill", "star.fill", "checkmark.seal.fill",
-        "camera.fill", "music.note", "gamecontroller.fill", "newspaper.fill", "car.fill", "lock.fill",
+        "message.fill", "bubble.left.and.bubble.right.fill", "bell.fill", "phone.fill", "creditcard.fill",
+        "heart.fill", "person.fill", "camera.fill", "photo.fill", "cart.fill", "tag.fill", "star.fill",
+        "checkmark.seal.fill", "music.note", "gamecontroller.fill", "newspaper.fill", "car.fill", "lock.fill",
     ]
 
     /// Dessine une icône carrée (iOS l'arrondit en cercle dans la notification).
@@ -83,10 +83,7 @@ enum AppIcons {
     static let choices: [Choice] = [
         Choice(name: nil, label: "Nova"),
         Choice(name: "AppIcon-Messages", label: "Messages"),
-        Choice(name: "AppIcon-Mail", label: "Mail"),
-        Choice(name: "AppIcon-Colis", label: "Colis"),
         Choice(name: "AppIcon-Banque", label: "Banque"),
-        Choice(name: "AppIcon-Agenda", label: "Agenda"),
         Choice(name: "AppIcon-Social", label: "Social"),
         Choice(name: "AppIcon-Alerte", label: "Alerte"),
     ]
@@ -109,9 +106,13 @@ enum AppIcons {
     }
 }
 
+
 // MARK: - Préréglages
 
 enum Presets {
+    /// À incrémenter quand de nouveaux exemples sont ajoutés : ils sont alors proposés aux installations existantes.
+    static let version = 2
+
     private struct Spec {
         var symbol: String? = nil
         var initials: String? = nil
@@ -119,47 +120,120 @@ enum Presets {
         var title: String
         var subtitle = ""
         var body: String
+        var persona: String? = nil
         var weight: Double = 1
         var isRare = false
     }
 
+    // Couleurs : 0 vert, 1 bleu, 2 indigo, 3 orange, 4 rouge, 5 rose, 6 turquoise, 7 gris, 8 noir
     private static let specs: [Spec] = [
+        // Messages
         Spec(initials: "L", color: 7, title: "Léa",
-             body: "Tu es dispo ce soir ? On pourrait se faire un resto 🍝"),
+             body: "Tu es dispo ce soir ? On pourrait se faire un resto 🍝", persona: "messages", weight: 2),
         Spec(initials: "TM", color: 7, title: "Thomas Martin", subtitle: "Re : Dossier projet",
-             body: "Je t'ai envoyé la dernière version, dis-moi ce que tu en penses."),
-        Spec(symbol: "shippingbox.fill", color: 3, title: "Votre colis arrive aujourd'hui",
-             body: "Livraison prévue entre 14 h et 16 h. Suivez votre livreur en temps réel."),
+             body: "Je t'ai envoyé la dernière version, dis-moi ce que tu en penses.", persona: "messages"),
+        Spec(initials: "M", color: 7, title: "Maman",
+             body: "Tu peux m'appeler quand tu as 5 minutes ? 😊", persona: "messages"),
+        Spec(initials: "H", color: 7, title: "Hugo",
+             body: "Bien arrivé ! On se voit demain 👍", persona: "messages"),
+
+        // Photos
+        Spec(symbol: "heart.fill", color: 4, title: "Nouveau j'aime",
+             body: "camille.dvl a aimé ta photo.", persona: "photos", weight: 2),
+        Spec(symbol: "message.fill", color: 4, title: "Nouveau commentaire",
+             body: "julien_m : « Trop belle cette photo 🔥 »", persona: "photos"),
+        Spec(symbol: "camera.fill", color: 4, title: "Nouvelle story",
+             body: "lea.martin vient de publier une story.", persona: "photos"),
+        Spec(symbol: "star.fill", color: 4, title: "Ta publication décolle 🚀",
+             body: "Ta dernière photo a dépassé 1 000 j'aime.", persona: "photos", isRare: true),
+
+        // Chat
+        Spec(symbol: "bubble.left.and.bubble.right.fill", color: 2, title: "Les potes · #général",
+             body: "Alex : quelqu'un est chaud pour une partie ce soir ?", persona: "chat", weight: 2),
+        Spec(initials: "S", color: 2, title: "Sarah",
+             body: "t'es là ? 👀", persona: "chat"),
+        Spec(symbol: "bubble.left.and.bubble.right.fill", color: 2, title: "Mention dans #projets",
+             body: "Lucas : tu peux regarder ça quand tu as le temps ?", persona: "chat"),
+
+        // Banque
         Spec(symbol: "creditcard.fill", color: 2, title: "Paiement accepté",
-             body: "Carte •••• 4821 : 23,90 € au Supermarché du Centre."),
-        Spec(symbol: "calendar", color: 4, title: "Réunion d'équipe", subtitle: "Dans 15 minutes",
-             body: "Salle 2 · Point hebdomadaire"),
+             body: "Carte •••• 4821 : 23,90 € au Supermarché du Centre.", persona: "banque"),
+        Spec(symbol: "creditcard.fill", color: 2, title: "Virement reçu",
+             body: "Vous avez reçu 150,00 € de Jean Dupont.", persona: "banque"),
+        Spec(symbol: "creditcard.fill", color: 2, title: "Solde mis à jour",
+             body: "Votre solde disponible est de 1 254,32 €.", persona: "banque"),
+
+        // Social
         Spec(symbol: "heart.fill", color: 5, title: "Nouvel abonné",
-             body: "camille.dvl a commencé à vous suivre."),
+             body: "camille.dvl a commencé à vous suivre.", persona: "social"),
+        Spec(symbol: "person.fill", color: 5, title: "Demande d'ami",
+             body: "Emma Leroy souhaite t'ajouter en ami.", persona: "social"),
+        Spec(symbol: "star.fill", color: 5, title: "Anniversaire 🎂",
+             body: "C'est l'anniversaire de Noah aujourd'hui. Souhaite-le-lui !", persona: "social"),
+
+        // Nova
+        Spec(symbol: "bell.fill", color: 6, title: "Rappel",
+             body: "Pense à boire un verre d'eau 💧", persona: "nova"),
         Spec(symbol: "checkmark.seal.fill", color: 6, title: "Bonne nouvelle 🎉",
-             body: "Votre candidature a été retenue. Nous revenons vers vous très vite.", isRare: true),
+             body: "Votre candidature a été retenue. Nous revenons vers vous très vite.", persona: "nova", isRare: true),
+
+        // Boutique
+        Spec(symbol: "cart.fill", color: 8, title: "Commande expédiée 🚚",
+             body: "Ta commande n° 1042 est en route. Livraison prévue demain.", persona: "boutique"),
+        Spec(symbol: "cart.fill", color: 8, title: "Ton panier t'attend",
+             body: "3 articles sont toujours dans ton panier.", persona: "boutique"),
+        Spec(symbol: "tag.fill", color: 8, title: "Vente flash ⚡",
+             body: "-30 % sur une sélection pendant 24 h seulement.", persona: "boutique"),
+
+        // Ventes
+        Spec(symbol: "heart.fill", color: 3, title: "Nouveau favori",
+             body: "lucie_b a ajouté « Veste en jean » à ses favoris.", persona: "ventes"),
+        Spec(symbol: "tag.fill", color: 3, title: "Nouvelle offre",
+             body: "Offre de 18 € sur « Veste en jean ».", persona: "ventes"),
+        Spec(symbol: "tag.fill", color: 3, title: "Article vendu 🎉",
+             body: "« Veste en jean » a trouvé preneur. Prépare l'envoi.", persona: "ventes", isRare: true),
     ]
 
-    static var templateTitles: [String] { specs.map(\.title) }
+    private static func make(_ spec: Spec) -> NotifTemplate {
+        let icon = IconMaker.render(symbol: spec.symbol, initials: spec.initials, color: IconMaker.colors[spec.color])
+        return NotifTemplate(title: spec.title, subtitle: spec.subtitle, body: spec.body,
+                             iconFile: ImageStore.save(image: icon, maxSide: 256),
+                             personaID: spec.persona, weight: spec.weight, isRare: spec.isRare)
+    }
 
-    /// Crée les modèles d'exemple (et enregistre leurs icônes).
-    static func makeTemplates(excludingTitles excluded: Set<String> = []) -> [NotifTemplate] {
-        specs.filter { !excluded.contains($0.title) }.map { spec in
-            let icon = IconMaker.render(symbol: spec.symbol, initials: spec.initials,
-                                       color: IconMaker.colors[spec.color])
-            return NotifTemplate(title: spec.title, subtitle: spec.subtitle, body: spec.body,
-                                 iconFile: ImageStore.save(image: icon, maxSide: 256),
-                                 weight: spec.weight, isRare: spec.isRare)
-        }
+    /// Modèles d'exemple d'une nouvelle installation (avec leurs icônes).
+    static func makeTemplates() -> [NotifTemplate] {
+        specs.map(make)
     }
 
     static var configs: [SendConfig] {
         [
+            SendConfig(name: "Applis web · test rapide", count: 5, totalDuration: 60, minInterval: 5, maxInterval: 30,
+                       mode: .regular, webPush: true),
+            SendConfig(name: "Applis web · 12 en 5 min", count: 12, totalDuration: 300, minInterval: 5, maxInterval: 60,
+                       mode: .random, webPush: true),
             SendConfig(name: "Test rapide", count: 5, totalDuration: 60, minInterval: 5, maxInterval: 30, mode: .regular),
             SendConfig(name: "Régulier · 10 en 5 min", count: 10, totalDuration: 300, minInterval: 10, maxInterval: 60, mode: .regular),
             SendConfig(name: "Aléatoire · 20 en 10 min", count: 20, totalDuration: 600, minInterval: 5, maxInterval: 90, mode: .random),
             SendConfig(name: "Rafales · 15 en 5 min", count: 15, totalDuration: 300, minInterval: 20, maxInterval: 120,
                        mode: .burst, burstSize: 3, burstGap: 2),
         ]
+    }
+
+    /// Ajoute les exemples et configurations manquants, et rattache les anciens exemples à leur expéditeur.
+    /// Renvoie l'identifiant de la première configuration « Applis web » ajoutée, s'il y en a une.
+    @discardableResult
+    static func merge(templates: inout [NotifTemplate], configs: inout [SendConfig]) -> UUID? {
+        for spec in specs {
+            if let i = templates.firstIndex(where: { $0.title == spec.title }) {
+                if templates[i].personaID == nil { templates[i].personaID = spec.persona }
+            } else {
+                templates.append(make(spec))
+            }
+        }
+        let missing = Self.configs.filter { preset in !configs.contains { $0.name == preset.name } }
+        configs.insert(contentsOf: missing.filter(\.webPush), at: 0)
+        configs.append(contentsOf: missing.filter { !$0.webPush })
+        return missing.first(where: \.webPush)?.id
     }
 }

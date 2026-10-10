@@ -354,6 +354,34 @@ private struct QuickSettings: View {
 
                 Toggle("Tirage aléatoire des modèles", isOn: $config.randomPick)
 
+                VStack(alignment: .leading, spacing: 12) {
+                    Picker("Affichage", selection: Binding(
+                        get: { config.webPush ? 2 : (config.liveActivity ? 1 : 0) },
+                        set: { v in
+                            config.liveActivity = v == 1
+                            config.webPush = v == 2
+                        })) {
+                        Text("Notifications").tag(0)
+                        Text("Applis web").tag(2)
+                        Text("Activité").tag(1)
+                    }
+                    .pickerStyle(.segmented)
+
+                    if config.webPush {
+                        NavigationLink {
+                            PersonasView()
+                        } label: {
+                            HStack {
+                                Label("Applis expéditrices : \(store.personas.count)/\(WebPersonas.slots.count) installées",
+                                      systemImage: "app.badge")
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption)
+                            }
+                            .font(.subheadline)
+                        }
+                    }
+                }
+
                 Divider().overlay(BW.gold.opacity(0.25))
 
                 VStack(alignment: .leading, spacing: 6) {

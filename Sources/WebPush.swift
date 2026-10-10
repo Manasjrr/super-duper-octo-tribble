@@ -28,12 +28,13 @@ enum WebPersonas {
 
     static let slots: [Slot] = [
         Slot(id: "messages", label: "Messages", preview: "Preview-AppIcon-Messages", custom: false),
-        Slot(id: "mail", label: "Mail", preview: "Preview-AppIcon-Mail", custom: false),
-        Slot(id: "colis", label: "Colis", preview: "Preview-AppIcon-Colis", custom: false),
+        Slot(id: "photos", label: "Photos", preview: "Preview-Persona-photos", custom: false),
+        Slot(id: "chat", label: "Chat", preview: "Preview-Persona-chat", custom: false),
         Slot(id: "banque", label: "Banque", preview: "Preview-AppIcon-Banque", custom: false),
-        Slot(id: "agenda", label: "Agenda", preview: "Preview-AppIcon-Agenda", custom: false),
         Slot(id: "social", label: "Social", preview: "Preview-AppIcon-Social", custom: false),
-        Slot(id: "alerte", label: "Alerte", preview: "Preview-AppIcon-Alerte", custom: false),
+        Slot(id: "nova", label: "Nova", preview: "Emblem", custom: false),
+        Slot(id: "boutique", label: "Boutique", preview: "Preview-Persona-boutique", custom: false),
+        Slot(id: "ventes", label: "Ventes", preview: "Preview-Persona-ventes", custom: false),
         Slot(id: "perso1", label: "Perso 1", preview: "Emblem", custom: true),
         Slot(id: "perso2", label: "Perso 2", preview: "Emblem", custom: true),
         Slot(id: "perso3", label: "Perso 3", preview: "Emblem", custom: true),

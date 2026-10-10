@@ -37,7 +37,13 @@ private struct HistoryRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            if let icon = ImageStore.load(entry.iconFile) {
+            if let slot = WebPersonas.slot(entry.personaID) {
+                Image(slot.preview)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 36, height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            } else if let icon = ImageStore.load(entry.iconFile) {
                 Image(uiImage: icon)
                     .resizable()
                     .scaledToFill()

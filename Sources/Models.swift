@@ -129,6 +129,7 @@ struct HistoryEntry: Identifiable, Codable, Hashable {
     var body: String
     var imageFile: String? = nil
     var iconFile: String? = nil
+    var personaID: String? = nil
     var isTest = false
     var isRare = false
 }

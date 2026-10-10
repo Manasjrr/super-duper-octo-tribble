@@ -65,6 +65,16 @@ final class AppStore: ObservableObject {
             configs = Presets.configs
         }
         if configs.isEmpty { configs = Presets.configs }
+        // Nouveaux exemples (applis expéditrices) proposés aux installations existantes, une seule fois
+        let presetsKey = "versionExemples"
+        if UserDefaults.standard.integer(forKey: presetsKey) < Presets.version {
+            var t = templates
+            var c = configs
+            if let webConfig = Presets.merge(templates: &t, configs: &c) { activeConfigID = webConfig }
+            templates = t
+            configs = c
+            UserDefaults.standard.set(Presets.version, forKey: presetsKey)
+        }
         if activeConfigID == nil || !configs.contains(where: { $0.id == activeConfigID }) {
             activeConfigID = configs.first?.id
         }
@@ -182,12 +192,13 @@ final class AppStore: ObservableObject {
         if activeConfigID == c.id { activeConfigID = configs.first?.id }
     }
 
+    /// Ajoute les exemples et configurations prédéfinies qui manquent.
     func addPresets() {
-        for var p in Presets.configs {
-            p.id = UUID()
-            configs.append(p)
-        }
-        templates += Presets.makeTemplates(excludingTitles: Set(templates.map(\.title)))
+        var t = templates
+        var c = configs
+        Presets.merge(templates: &t, configs: &c)
+        templates = t
+        configs = c
     }
 
     /// Messages utilisés par une config (tous si aucune sélection).
@@ -201,7 +212,7 @@ final class AppStore: ObservableObject {
 
     func start() {
         guard let config = activeConfig else { return }
-        if authorization == .denied {
+        if authorization == .denied && !config.webPush && !config.liveActivity {
             message = "Les notifications sont désactivées dans Réglages."
             return
         }
@@ -331,7 +342,8 @@ final class AppStore: ObservableObject {
         for i in r.items.indices where r.items[i].scheduled && !r.items[i].logged && r.items[i].fireDate <= now {
             let it = r.items[i]
             newEntries.append(HistoryEntry(date: it.fireDate, title: it.title, body: it.body,
-                                           imageFile: it.imageFile, iconFile: it.iconFile, isRare: it.isRare))
+                                           imageFile: it.imageFile, iconFile: it.iconFile,
+                                           personaID: r.isWeb ? it.personaID : nil, isRare: it.isRare))
             r.items[i].logged = true
         }
         if !newEntries.isEmpty { addHistory(newEntries) }
@@ -440,7 +452,8 @@ final class AppStore: ObservableObject {
                 if !ok { self?.message = "Échec de l'envoi vers « \(persona.name) » : \(detail)" }
             }
             addHistory([HistoryEntry(date: date, title: t.displayTitle, body: t.body,
-                                     imageFile: t.imageFile, iconFile: t.iconFile, isTest: true, isRare: t.isRare)])
+                                     imageFile: t.imageFile, iconFile: t.iconFile, personaID: persona.id,
+                                     isTest: true, isRare: t.isRare)])
             message = nil
             return
         }
