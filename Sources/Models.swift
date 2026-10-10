@@ -10,6 +10,7 @@ struct NotifTemplate: Identifiable, Codable, Hashable {
     var body = ""
     var imageFile: String? = nil
     var iconFile: String? = nil // icône ronde à gauche (notification de communication)
+    var personaID: String? = nil // appli web expéditrice (mode « Applis web »)
     var weight: Double = 1      // poids relatif pour le tirage
     var isRare = false          // n'apparaît qu'avec la « chance de rare » de la config
 
@@ -69,6 +70,7 @@ struct SendConfig: Identifiable, Codable, Hashable {
     var appIcon: String? = nil          // icône alternative de l'app pendant le scénario (nil = Nova)
     var liveActivity = false            // affichage en Activité en direct (icônes libres)
     var liveArchive = true              // + copie silencieuse dans le centre de notifications
+    var webPush = false                 // envoi par les applis web expéditrices (vraies icônes)
 }
 
 // MARK: - Scénario en cours
@@ -81,6 +83,7 @@ struct PlannedNotif: Identifiable, Codable, Hashable {
     var body: String
     var imageFile: String?
     var iconFile: String? = nil
+    var personaID: String? = nil
     var isRare: Bool
     var scheduled = false   // programmée auprès d'iOS
     var logged = false      // ajoutée au journal
@@ -100,9 +103,11 @@ struct Run: Codable, Equatable {
     var endedAt: Date? = nil
     var live: Bool? = nil   // scénario affiché en Activité en direct
     var liveArchive: Bool? = nil
+    var web: Bool? = nil    // scénario envoyé par les applis web
 
     var isActive: Bool { status == .running || status == .paused }
     var isLive: Bool { live == true }
+    var isWeb: Bool { web == true }
 
     func sent(at now: Date) -> Int {
         let ref = pausedAt ?? now
@@ -148,6 +153,7 @@ extension NotifTemplate {
         body = c.value(.body, body)
         imageFile = try? c.decodeIfPresent(String.self, forKey: .imageFile)
         iconFile = try? c.decodeIfPresent(String.self, forKey: .iconFile)
+        personaID = try? c.decodeIfPresent(String.self, forKey: .personaID)
         weight = c.value(.weight, weight)
         isRare = c.value(.isRare, isRare)
     }
@@ -175,5 +181,6 @@ extension SendConfig {
         appIcon = try? c.decodeIfPresent(String.self, forKey: .appIcon)
         liveActivity = c.value(.liveActivity, liveActivity)
         liveArchive = c.value(.liveArchive, liveArchive)
+        webPush = c.value(.webPush, webPush)
     }
 }

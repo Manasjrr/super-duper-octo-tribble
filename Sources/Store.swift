@@ -10,6 +10,8 @@ private struct SavedState: Codable {
     var activeConfigID: UUID? = nil
     var run: Run? = nil
     var history: [HistoryEntry] = []
+    var personas: [Persona] = []
+    var webBaseURL = WebPersonas.defaultBaseURL
 
     init() {}
 
@@ -20,6 +22,8 @@ private struct SavedState: Codable {
         activeConfigID = try? c.decodeIfPresent(UUID.self, forKey: .activeConfigID)
         run = try? c.decodeIfPresent(Run.self, forKey: .run)
         history = c.value(.history, [])
+        personas = c.value(.personas, [])
+        webBaseURL = c.value(.webBaseURL, WebPersonas.defaultBaseURL)
     }
 }
 
@@ -36,6 +40,8 @@ final class AppStore: ObservableObject {
     @Published var activeConfigID: UUID? { didSet { save() } }
     @Published var run: Run? { didSet { save() } }
     @Published var history: [HistoryEntry] = [] { didSet { save() } }
+    @Published var personas: [Persona] = [] { didSet { save() } }
+    @Published var webBaseURL = WebPersonas.defaultBaseURL { didSet { save() } }
     @Published var authorization: UNAuthorizationStatus = .notDetermined
     @Published var message: String?
 
@@ -52,6 +58,8 @@ final class AppStore: ObservableObject {
             activeConfigID = state.activeConfigID
             run = state.run
             history = state.history
+            personas = state.personas
+            webBaseURL = state.webBaseURL
         } else {
             templates = Presets.makeTemplates()
             configs = Presets.configs
@@ -79,6 +87,8 @@ final class AppStore: ObservableObject {
         state.activeConfigID = activeConfigID
         state.run = run
         state.history = history
+        state.personas = personas
+        state.webBaseURL = webBaseURL
         if let data = try? JSONEncoder().encode(state) {
             try? data.write(to: fileURL, options: .atomic)
         }
@@ -208,15 +218,23 @@ final class AppStore: ObservableObject {
             guard let t = picker.next() else { return nil }
             return PlannedNotif(fireDate: now.addingTimeInterval(offset),
                                 title: t.displayTitle, subtitle: t.subtitle, body: t.body,
-                                imageFile: t.imageFile, iconFile: t.iconFile, isRare: t.isRare)
+                                imageFile: t.imageFile, iconFile: t.iconFile, personaID: t.personaID,
+                                isRare: t.isRare)
         }
-        if config.liveActivity, let error = LiveMode.start(configName: config.name, total: items.count) {
+        if config.webPush {
+            guard !KeepAlive.shared.isDenied else {
+                message = "L'affichage « Applis web » a besoin de la localisation pour garder Nova active (Réglages > Nova > Position)."
+                return
+            }
+            KeepAlive.shared.start()
+        } else if config.liveActivity, let error = LiveMode.start(configName: config.name, total: items.count) {
             message = error
             return
         }
         message = nil
         run = Run(configName: config.name, items: items, plannedCount: items.count,
-                  live: config.liveActivity ? true : nil, liveArchive: config.liveArchive)
+                  live: config.liveActivity && !config.webPush ? true : nil, liveArchive: config.liveArchive,
+                  web: config.webPush ? true : nil)
         tick()
         AppIcons.apply(config.appIcon) { [weak self] error in
             if let error { self?.message = "Icône de l'app non changée : \(error)" }
@@ -234,6 +252,7 @@ final class AppStore: ObservableObject {
         r.pausedAt = now
         run = r
         if r.isLive { LiveMode.pause() }
+        if r.isWeb { KeepAlive.shared.stop() }
     }
 
     func resume() {
@@ -246,6 +265,7 @@ final class AppStore: ObservableObject {
         r.pausedAt = nil
         run = r
         if r.isLive { LiveMode.resume() }
+        if r.isWeb { KeepAlive.shared.start() }
         tick()
     }
 
@@ -259,6 +279,7 @@ final class AppStore: ObservableObject {
         r.endedAt = Date()
         run = r
         if r.isLive { LiveMode.end(immediately: true) }
+        if r.isWeb { KeepAlive.shared.stop() }
         tick()
     }
 
@@ -280,6 +301,12 @@ final class AppStore: ObservableObject {
                 LiveMode.show(r.items[last], sent: r.sent(at: now), total: r.plannedCount,
                               archive: r.liveArchive != false)
             }
+        } else if r.status == .running && r.isWeb {
+            // Applis web : Nova envoie chaque push à l'heure prévue (si Nova a été suspendue,
+            // on n'envoie que les 3 derniers en retard pour éviter une rafale).
+            let due = r.items.indices.filter { !r.items[$0].scheduled && r.items[$0].fireDate <= now }
+            for i in due { r.items[i].scheduled = true }
+            for i in due.suffix(3) { deliverWeb(r.items[i]) }
         } else if r.status == .running {
             // Des notifs non programmées sont passées (app fermée trop longtemps) : on décale la suite.
             if let idx = r.items.firstIndex(where: { !$0.scheduled && $0.fireDate <= now }) {
@@ -313,9 +340,84 @@ final class AppStore: ObservableObject {
             r.status = .finished
             r.endedAt = r.items.last?.fireDate ?? now
             if r.isLive { LiveMode.end(immediately: false) }
+            if r.isWeb { KeepAlive.shared.stop() }
         }
 
         if r != run { run = r }
+    }
+
+    // MARK: Applis web expéditrices
+
+    func persona(_ id: String?) -> Persona? {
+        personas.first { $0.id == id }
+    }
+
+    /// Envoie une notification par l'appli web du modèle, sinon en notification normale.
+    private func deliverWeb(_ item: PlannedNotif) {
+        guard let persona = self.persona(item.personaID) else {
+            Notifier.schedule(id: item.id, title: item.title, subtitle: item.subtitle, body: item.body,
+                              imageFile: item.imageFile, iconFile: item.iconFile, at: Date())
+            return
+        }
+        WebPush.send(to: persona, title: item.title, subtitle: item.subtitle, body: item.body,
+                     id: item.id.uuidString) { [weak self] ok, detail in
+            self?.setPersonaStatus(persona.id, ok ? nil : detail)
+            if !ok {
+                // Secours : la notification part quand même, avec l'icône de Nova
+                Notifier.schedule(id: item.id, title: item.title, subtitle: item.subtitle, body: item.body,
+                                  imageFile: item.imageFile, iconFile: item.iconFile, at: Date())
+            }
+        }
+    }
+
+    private func setPersonaStatus(_ id: String, _ status: String?) {
+        guard let i = personas.firstIndex(where: { $0.id == id }), personas[i].lastStatus != status else { return }
+        personas[i].lastStatus = status
+    }
+
+    func testPersona(_ id: String) {
+        guard let persona = self.persona(id) else { return }
+        WebPush.send(to: persona, title: persona.name, subtitle: "", body: "Notification de test envoyée par Nova",
+                     id: UUID().uuidString) { [weak self] ok, detail in
+            self?.setPersonaStatus(id, ok ? nil : detail)
+            self?.message = ok ? nil : "Échec de l'envoi vers « \(persona.name) » : \(detail)"
+        }
+    }
+
+    func removePersona(_ id: String) {
+        personas.removeAll { $0.id == id }
+    }
+
+    /// Enregistre la connexion renvoyée par une appli web.
+    @discardableResult
+    func addPersona(fromPayload payload: String) -> Bool {
+        guard var p = WebPersonas.decode(payload) else { return false }
+        if let old = persona(p.id), old.name != p.name, p.name == WebPersonas.slot(p.id)?.label {
+            p.name = old.name
+        }
+        personas.removeAll { $0.id == p.id }
+        personas.append(p)
+        personas.sort { a, b in
+            (WebPersonas.slots.firstIndex { $0.id == a.id } ?? 99) < (WebPersonas.slots.firstIndex { $0.id == b.id } ?? 99)
+        }
+        message = nil
+        return true
+    }
+
+    /// nova://persona?d=…
+    func handle(url: URL) {
+        guard url.scheme == "nova", url.host == "persona",
+              let d = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "d" })?.value
+        else { return }
+        if !addPersona(fromPayload: d) { message = "Connexion d'appli web illisible." }
+    }
+
+    func importPersonaFromClipboard() {
+        let text = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard text.hasPrefix("NOVA-SUB:"), addPersona(fromPayload: String(text.dropFirst("NOVA-SUB:".count))) else {
+            message = "Le presse-papiers ne contient pas de connexion d'appli web."
+            return
+        }
     }
 
     // MARK: Test immédiat
@@ -331,6 +433,17 @@ final class AppStore: ObservableObject {
             return
         }
         let date = Date().addingTimeInterval(1)
+        if let persona = self.persona(t.personaID) {
+            WebPush.send(to: persona, title: t.displayTitle, subtitle: t.subtitle, body: t.body,
+                         id: UUID().uuidString) { [weak self] ok, detail in
+                self?.setPersonaStatus(persona.id, ok ? nil : detail)
+                if !ok { self?.message = "Échec de l'envoi vers « \(persona.name) » : \(detail)" }
+            }
+            addHistory([HistoryEntry(date: date, title: t.displayTitle, body: t.body,
+                                     imageFile: t.imageFile, iconFile: t.iconFile, isTest: true, isRare: t.isRare)])
+            message = nil
+            return
+        }
         Notifier.schedule(id: UUID(), title: t.displayTitle, subtitle: t.subtitle, body: t.body,
                           imageFile: t.imageFile, iconFile: t.iconFile, at: date)
         addHistory([HistoryEntry(date: date, title: t.displayTitle, body: t.body,

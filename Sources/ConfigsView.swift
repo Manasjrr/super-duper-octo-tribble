@@ -9,6 +9,17 @@ struct ConfigsView: View {
         NavigationStack {
             List {
                 Section {
+                    NavigationLink {
+                        PersonasView()
+                    } label: {
+                        Label("Applis expéditrices", systemImage: "app.badge")
+                    }
+                } footer: {
+                    Text("Pour recevoir de vraies notifications avec des icônes différentes (Messages, Banque…).")
+                }
+                .listRowBackground(BW.hull)
+
+                Section {
                     ForEach(store.configs) { c in
                         NavigationLink {
                             ConfigEditor(config: store.configBinding(c.id))
@@ -155,20 +166,27 @@ struct ConfigEditor: View {
             .listRowBackground(BW.hull)
 
             Section {
-                Picker("Affichage", selection: $config.liveActivity) {
-                    Text("Notifications").tag(false)
-                    Text("Activité en direct").tag(true)
+                Picker("Affichage", selection: displayMode) {
+                    Text("Notifications").tag(0)
+                    Text("Applis web").tag(2)
+                    Text("Activité").tag(1)
                 }
                 .pickerStyle(.segmented)
-                if config.liveActivity {
+                if config.liveActivity && !config.webPush {
                     Toggle("Garder aussi dans le centre de notifications", isOn: $config.liveArchive)
+                }
+                if config.webPush {
+                    NavigationLink {
+                        PersonasView()
+                    } label: {
+                        Label("Applis expéditrices (\(store.personas.count) installée\(store.personas.count > 1 ? "s" : ""))",
+                              systemImage: "app.badge")
+                    }
                 }
             } header: {
                 Text("Affichage")
             } footer: {
-                Text(verbatim: config.liveActivity
-                     ? "Chaque envoi s'affiche dans une Activité en direct dessinée comme une notification, avec l'icône ronde de chaque modèle (sans autorisation Apple). Nova reste active en arrière-plan grâce à la localisation (flèche bleue, batterie davantage sollicitée). Ne ferme pas Nova depuis le sélecteur d'apps pendant le scénario. La carte montre le dernier envoi et les 2 précédents. « Garder aussi » range chaque envoi en silence dans le centre de notifications (avec l'icône de l'app, limite d'iOS) pour ne rien perdre."
-                     : "Notifications iOS classiques : elles s'empilent et arrivent même si Nova est fermée, mais avec l'icône de l'app (ou l'« Icône de l'app » choisie ci-dessous).")
+                Text(verbatim: displayFooter)
             }
             .listRowBackground(BW.hull)
 
@@ -308,6 +326,26 @@ struct ConfigEditor: View {
             ids.append(t.id)
         }
         config.templateIDs = Set(ids) == Set(all) ? [] : ids
+    }
+
+    private var displayMode: Binding<Int> {
+        Binding(
+            get: { config.webPush ? 2 : (config.liveActivity ? 1 : 0) },
+            set: { v in
+                config.liveActivity = v == 1
+                config.webPush = v == 2
+            }
+        )
+    }
+
+    private var displayFooter: String {
+        if config.webPush {
+            return "Chaque modèle est envoyé par son appli expéditrice (Modèles › Expéditeur) : de vraies notifications, avec l'icône et le nom de l'appli, qui s'empilent normalement. Nova doit rester active pendant le scénario (localisation en arrière-plan, flèche bleue) et avoir Internet. Les modèles sans expéditeur partent en notification normale."
+        }
+        if config.liveActivity {
+            return "Chaque envoi s'affiche dans une Activité en direct dessinée comme une notification, avec l'icône ronde de chaque modèle. Une seule carte à la fois (dernier envoi + 2 précédents). Nova reste active grâce à la localisation. « Garder aussi » range chaque envoi en silence dans le centre de notifications."
+        }
+        return "Notifications iOS classiques : elles s'empilent et arrivent même si Nova est fermée, mais avec l'icône de l'app (ou l'« Icône de l'app » choisie ci-dessous)."
     }
 
     private func tirageFooter(hasRare: Bool) -> String {

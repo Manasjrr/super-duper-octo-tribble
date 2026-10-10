@@ -256,6 +256,21 @@ struct TemplateEditor: View {
 
                 iconSection
 
+                Section {
+                    Picker("Expéditeur", selection: $draft.personaID) {
+                        Text("Nova").tag(String?.none)
+                        ForEach(WebPersonas.slots) { slot in
+                            Text(store.persona(slot.id)?.name ?? slot.label + " (non installé)")
+                                .tag(Optional(slot.id))
+                        }
+                    }
+                } header: {
+                    Text("Expéditeur")
+                } footer: {
+                    Text("Utilisé quand la configuration est en affichage « Applis web » : la notification arrive depuis cette appli, avec son icône et son nom. À installer dans Configurations › Applis expéditrices.")
+                }
+                .listRowBackground(BW.hull)
+
                 Section("Image jointe") {
                     if let previewImage {
                         Image(uiImage: previewImage)

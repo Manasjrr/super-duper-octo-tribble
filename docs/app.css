@@ -1,0 +1,56 @@
+:root {
+  --bg: #0c1218;
+  --card: #19242c;
+  --text: #f2f3f6;
+  --muted: rgba(242, 243, 246, 0.6);
+  --accent: #d9b061;
+  --ok: #33908a;
+  --warn: #e0544a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: linear-gradient(var(--bg), #101b22);
+  color: var(--text);
+  font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+}
+
+main { max-width: 480px; margin: 0 auto; }
+
+header { text-align: center; margin: 12px 0 24px; }
+.icon { width: 88px; height: 88px; border-radius: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); }
+h1 { margin: 14px 0 2px; font-size: 26px; }
+.sub { margin: 0; color: var(--muted); font-size: 14px; }
+
+.card {
+  background: var(--card);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+.card.ok h2 { color: var(--ok); }
+h2 { font-size: 18px; margin: 0 0 10px; }
+ol { margin: 0; padding-left: 20px; }
+li { margin: 6px 0; }
+.glyph { color: var(--accent); }
+
+button {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--accent);
+  color: var(--bg);
+  font: 600 16px -apple-system, sans-serif;
+}
+button.secondary { background: rgba(217, 176, 97, 0.12); color: var(--accent); border: 1px solid rgba(217, 176, 97, 0.5); }
+button:disabled { opacity: 0.4; }
+
+.warn { color: var(--warn); font-size: 14px; text-align: center; }

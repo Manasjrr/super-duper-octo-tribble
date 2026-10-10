@@ -24,6 +24,7 @@ struct ContentView: View {
             await store.requestAuthorization()
             store.tick()
         }
+        .onOpenURL { url in store.handle(url: url) }
         .onChange(of: scenePhase) { phase in
             guard phase == .active else { return }
             store.tick()
@@ -47,7 +48,24 @@ struct HomeView: View {
                     if IconSupport.current == .missing && store.templates.contains(where: { $0.iconFile != nil }) {
                         IconWarning()
                     }
-                    if store.activeConfig?.liveActivity == true || store.run?.isLive == true {
+                    if store.activeConfig?.webPush == true && store.personas.isEmpty {
+                        NavigationLink {
+                            PersonasView()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Label("Aucune appli expéditrice installée", systemImage: "app.badge")
+                                    .font(BW.font(.headline, .semibold))
+                                    .foregroundStyle(BW.gold)
+                                Text("La configuration est en affichage « Applis web ». Installe au moins un expéditeur pour avoir des icônes différentes.")
+                                    .font(.footnote)
+                                    .foregroundStyle(BW.mist)
+                                    .multilineTextAlignment(.leading)
+                            }
+                            .bwCard()
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if store.activeConfig?.webPush != true && (store.activeConfig?.liveActivity == true || store.run?.isLive == true) {
                         LiveDiagnostics()
                     }
                     if let run = store.run {

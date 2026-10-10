@@ -18,6 +18,9 @@ targets:
         UIUserInterfaceStyle: Dark
         NSUserActivityTypes: [INSendMessageIntent]
         NSSupportsLiveActivities: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.manas.nova
+            CFBundleURLSchemes: [nova]
         UIBackgroundModes: [location]
         NSLocationWhenInUseUsageDescription: "Nova utilise la localisation uniquement pour rester active en arrière-plan pendant un scénario en mode Activité en direct. Ta position n'est ni enregistrée ni envoyée."
     entitlements:
