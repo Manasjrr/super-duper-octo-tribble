@@ -1,0 +1,47 @@
+name: Compiler l'app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer XcodeGen
+        run: brew install xcodegen
+
+      - name: Générer le projet Xcode
+        run: xcodegen generate
+
+      - name: Compiler (sans signature, SideStore signe à l'installation)
+        run: |
+          xcodebuild \
+            -project MesNotifs.xcodeproj \
+            -scheme MesNotifs \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Créer le fichier .ipa
+        run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/MesNotifs.app Payload/
+          zip -qr MesNotifs.ipa Payload
+
+      - name: Publier le .ipa
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: MesNotifs build ${{ github.run_number }}
+          files: MesNotifs.ipa
