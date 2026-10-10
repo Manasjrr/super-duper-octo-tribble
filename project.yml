@@ -1,0 +1,22 @@
+name: MesNotifs
+options:
+  bundleIdPrefix: com.arthur
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  MesNotifs:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: MesNotifs
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.arthur.mesnotifs
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
