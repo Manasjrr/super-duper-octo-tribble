@@ -116,6 +116,7 @@ struct ConfigEditor: View {
         let probabilities = Planner.probabilities(pool: pool, config: config)
         let hasRare = pool.contains { $0.isRare }
         let possible = Planner.achievableDuration(config)
+        let usable = store.templates.filter { !$0.isEmpty }
 
         Form {
             Section("Nom") {
@@ -205,39 +206,56 @@ struct ConfigEditor: View {
             .listRowBackground(BW.hull)
 
             Section {
-                ForEach(store.templates.filter { !$0.isEmpty && !$0.onlyAsFollowUp }) { t in
-                    let selected = config.templateIDs.isEmpty || config.templateIDs.contains(t.id)
-                    Button {
-                        toggle(t)
-                    } label: {
-                        HStack {
-                            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(selected ? BW.gold : BW.mist)
-                            Text(t.displayTitle)
-                                .foregroundStyle(BW.parchment)
-                                .lineLimit(1)
-                            if t.isRare {
-                                Image(systemName: "star.fill").font(.caption).foregroundStyle(BW.gold)
-                            }
-                            Spacer()
-                            if selected, let p = probabilities[t.id] {
-                                Text(formatPercent(p))
-                                    .font(.footnote)
-                                    .foregroundStyle(BW.mist)
-                                    .monospacedDigit()
-                            }
-                        }
-                    }
-                }
+                Text("\(pool.count) modèle\(pool.count > 1 ? "s" : "") sur \(usable.count)")
+                    .foregroundStyle(BW.mist)
                 if !config.templateIDs.isEmpty {
                     Button("Tout sélectionner") { config.templateIDs = [] }
                 }
             } header: {
                 Text("Modèles utilisés")
             } footer: {
-                Text("Le pourcentage indique la chance approximative de chaque modèle à chaque envoi.")
+                Text("Touche un modèle pour l'ajouter ou le retirer, ou « Tous » / « Aucun » pour toute une appli. Le pourcentage indique la chance approximative de chaque modèle à chaque envoi.")
             }
             .listRowBackground(BW.hull)
+
+            ForEach(store.groupedBySender(usable)) { group in
+                let allSelected = group.templates.allSatisfy { isSelected($0) }
+                Section {
+                    ForEach(group.templates) { t in
+                        let selected = isSelected(t)
+                        Button {
+                            toggle(t)
+                        } label: {
+                            HStack {
+                                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(selected ? BW.gold : BW.mist)
+                                Text(t.displayTitle)
+                                    .foregroundStyle(BW.parchment)
+                                    .lineLimit(1)
+                                if t.isRare {
+                                    Image(systemName: "star.fill").font(.caption).foregroundStyle(BW.gold)
+                                }
+                                if !t.cascade.isEmpty {
+                                    Image(systemName: "square.stack.3d.down.right").font(.caption).foregroundStyle(BW.mist)
+                                }
+                                Spacer()
+                                if selected, let p = probabilities[t.id] {
+                                    Text(formatPercent(p))
+                                        .font(.footnote)
+                                        .foregroundStyle(BW.mist)
+                                        .monospacedDigit()
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    SenderGroupHeader(slot: group.slot, count: group.templates.count) {
+                        Button(allSelected ? "Aucun" : "Tous") { toggle(group.templates, on: !allSelected) }
+                            .font(.footnote.weight(.semibold))
+                    }
+                }
+                .listRowBackground(BW.hull)
+            }
         }
         .bwForm()
         .navigationTitle(config.name)
@@ -256,14 +274,25 @@ struct ConfigEditor: View {
         sample = Planner.offsets(for: config)
     }
 
+    private func isSelected(_ t: NotifTemplate) -> Bool {
+        config.templateIDs.isEmpty || config.templateIDs.contains(t.id)
+    }
+
     private func toggle(_ t: NotifTemplate) {
-        let all = store.templates.filter { !$0.isEmpty && !$0.onlyAsFollowUp }.map(\.id)
+        toggle([t], on: !isSelected(t))
+    }
+
+    /// Ajoute ou retire des modèles de la sélection (au moins un modèle reste sélectionné).
+    private func toggle(_ list: [NotifTemplate], on: Bool) {
+        let all = store.templates.filter { !$0.isEmpty }.map(\.id)
         var ids = config.templateIDs.isEmpty ? all : config.templateIDs
-        if ids.contains(t.id) {
-            guard ids.count > 1 else { return }  // on garde au moins un message
-            ids.removeAll { $0 == t.id }
+        let changed = Set(list.map(\.id))
+        if on {
+            ids += list.map(\.id).filter { !ids.contains($0) }
         } else {
-            ids.append(t.id)
+            let rest = ids.filter { !changed.contains($0) }
+            guard !rest.isEmpty else { return }
+            ids = rest
         }
         config.templateIDs = Set(ids) == Set(all) ? [] : ids
     }

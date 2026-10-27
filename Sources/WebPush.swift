@@ -22,22 +22,23 @@ enum WebPersonas {
     struct Slot: Identifiable {
         let id: String
         let label: String
-        let preview: String     // image de l'app pour l'aperçu
         let custom: Bool
     }
 
+    // Les icônes affichées dans Nova sont celles des applis web (docs/p/<id>/icon-180.png),
+    // recopiées dans Assets.xcassets à chaque build (voir .github/workflows/build.yml).
     static let slots: [Slot] = [
-        Slot(id: "messages", label: "Messages", preview: "Preview-Persona-messages", custom: false),
-        Slot(id: "photos", label: "Photos", preview: "Preview-Persona-photos", custom: false),
-        Slot(id: "chat", label: "Chat", preview: "Preview-Persona-chat", custom: false),
-        Slot(id: "banque", label: "Banque", preview: "Preview-Persona-banque", custom: false),
-        Slot(id: "social", label: "Social", preview: "Preview-Persona-social", custom: false),
-        Slot(id: "nova", label: "Nova", preview: "Emblem", custom: false),
-        Slot(id: "boutique", label: "Boutique", preview: "Preview-Persona-boutique", custom: false),
-        Slot(id: "ventes", label: "Ventes", preview: "Preview-Persona-ventes", custom: false),
-        Slot(id: "perso1", label: "Perso 1", preview: "Emblem", custom: true),
-        Slot(id: "perso2", label: "Perso 2", preview: "Emblem", custom: true),
-        Slot(id: "perso3", label: "Perso 3", preview: "Emblem", custom: true),
+        Slot(id: "messages", label: "Messages", custom: false),
+        Slot(id: "photos", label: "Photos", custom: false),
+        Slot(id: "chat", label: "Chat", custom: false),
+        Slot(id: "banque", label: "Banque", custom: false),
+        Slot(id: "social", label: "Social", custom: false),
+        Slot(id: "nova", label: "Nova", custom: false),
+        Slot(id: "boutique", label: "Boutique", custom: false),
+        Slot(id: "ventes", label: "Ventes", custom: false),
+        Slot(id: "perso1", label: "Perso 1", custom: true),
+        Slot(id: "perso2", label: "Perso 2", custom: true),
+        Slot(id: "perso3", label: "Perso 3", custom: true),
     ]
 
     /// Expéditeur des modèles qui n'en ont pas choisi.

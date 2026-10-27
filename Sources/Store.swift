@@ -99,6 +99,15 @@ final class AppStore: ObservableObject {
             try? FileManager.default.removeItem(at: Self.documents.appendingPathComponent("Images"))
         }
 
+        if stored < 6 {
+            // Les suites de cascade ne sont plus des modèles à part : elles rejoignent le modèle de départ
+            templates = Self.embedCascades(templates)
+            let ids = Set(templates.map(\.id))
+            for i in configs.indices {
+                configs[i].templateIDs.removeAll { !ids.contains($0) }
+            }
+        }
+
         var t = templates
         var c = configs
         // Seuls les exemples apparus depuis la dernière version sont ajoutés : un exemple supprimé ne revient pas
@@ -109,6 +118,35 @@ final class AppStore: ObservableObject {
         templates = t
         configs = c
         UserDefaults.standard.set(Presets.version, forKey: key)
+    }
+
+    /// Ancien système : une suite était un modèle à part, relié au précédent. Chaque chaîne devient
+    /// la liste des étapes du modèle de départ ; une suite reliée à rien redevient un modèle normal.
+    private static func embedCascades(_ old: [NotifTemplate]) -> [NotifTemplate] {
+        var result = old
+        var linked: Set<UUID> = []
+        for i in result.indices where result[i].steps.isEmpty {
+            let start = result[i]
+            var seen: Set<UUID> = [start.id]
+            var current = start
+            var steps: [CascadeStep] = []
+            while steps.count < 5, let nextID = current.followUpID, !seen.contains(nextID),
+                  let next = old.first(where: { $0.id == nextID }), !next.isEmpty {
+                let body = next.subtitle.isEmpty ? next.body : next.subtitle + "\n" + next.body
+                let title = next.displayTitle == start.displayTitle ? "" : next.displayTitle
+                steps.append(CascadeStep(delay: max(1, current.followUpDelay), title: title, body: body))
+                seen.insert(nextID)
+                linked.insert(nextID)
+                current = next
+            }
+            result[i].steps = steps
+        }
+        result.removeAll { $0.onlyAsFollowUp && linked.contains($0.id) }
+        for i in result.indices {
+            result[i].followUpID = nil
+            result[i].onlyAsFollowUp = false
+        }
+        return result
     }
 
     private func save() {
@@ -151,9 +189,6 @@ final class AppStore: ObservableObject {
 
     func deleteTemplate(_ t: NotifTemplate) {
         templates.removeAll { $0.id == t.id }
-        for i in templates.indices where templates[i].followUpID == t.id {
-            templates[i].followUpID = nil
-        }
         for i in configs.indices where configs[i].templateIDs.contains(t.id) {
             configs[i].templateIDs.removeAll { $0 == t.id }
         }
@@ -180,6 +215,19 @@ final class AppStore: ObservableObject {
         } else {
             templates.append(copy)
         }
+    }
+
+    /// Modèles rangés par appli expéditrice, dans l'ordre des applis.
+    func groupedBySender(_ list: [NotifTemplate]) -> [SenderGroup] {
+        WebPersonas.slots.compactMap { slot in
+            let items = list.filter { $0.sender == slot.id }
+            return items.isEmpty ? nil : SenderGroup(slot: slot, templates: items)
+        }
+    }
+
+    /// Nom affiché d'une appli expéditrice (celui choisi à l'installation, s'il y en a un).
+    func senderName(_ slot: WebPersonas.Slot) -> String {
+        persona(slot.id)?.name ?? slot.label
     }
 
     // MARK: Configurations
@@ -232,7 +280,7 @@ final class AppStore: ObservableObject {
 
     /// Modèles utilisés par une config (tous si aucune sélection).
     func pool(for config: SendConfig) -> [NotifTemplate] {
-        let usable = templates.filter { !$0.isEmpty && !$0.onlyAsFollowUp }
+        let usable = templates.filter { !$0.isEmpty }
         let selected = usable.filter { config.templateIDs.contains($0.id) }
         return selected.isEmpty ? usable : selected
     }
@@ -266,8 +314,8 @@ final class AppStore: ObservableObject {
             items.append(planned(t, at: now.addingTimeInterval(offset)))
             // Cascade : les suites arrivent toujours après la notification qui les déclenche,
             // depuis la même appli expéditrice
-            for (next, delay) in followUps(of: t) {
-                items.append(planned(next, at: now.addingTimeInterval(offset + delay), personaID: t.personaID))
+            for (next, delay) in t.cascade {
+                items.append(planned(next, at: now.addingTimeInterval(offset + delay)))
             }
         }
         items.sort { $0.fireDate < $1.fireDate }
@@ -277,25 +325,9 @@ final class AppStore: ObservableObject {
         tick()
     }
 
-    private func planned(_ t: NotifTemplate, at date: Date, personaID: String?? = nil) -> PlannedNotif {
+    private func planned(_ t: NotifTemplate, at date: Date) -> PlannedNotif {
         PlannedNotif(fireDate: date, title: t.displayTitle, subtitle: t.subtitle, body: t.body,
-                     personaID: personaID ?? t.personaID, isRare: t.isRare)
-    }
-
-    /// Suites d'un modèle (cascade), avec leur délai cumulé. 5 niveaux au plus, sans boucle.
-    func followUps(of t: NotifTemplate) -> [(NotifTemplate, Double)] {
-        var result: [(NotifTemplate, Double)] = []
-        var seen: Set<UUID> = [t.id]
-        var current = t
-        var delay = 0.0
-        while result.count < 5, let nextID = current.followUpID, !seen.contains(nextID),
-              let next = templates.first(where: { $0.id == nextID }), !next.isEmpty {
-            delay += max(1, current.followUpDelay)
-            result.append((next, delay))
-            seen.insert(nextID)
-            current = next
-        }
-        return result
+                     personaID: t.personaID, isRare: t.isRare)
     }
 
     func pause() {
@@ -401,19 +433,19 @@ final class AppStore: ObservableObject {
             message = "Aucun modèle à tester."
             return
         }
-        sendTestNow(t, personaID: t.personaID)
+        sendTestNow(t)
         message = nil
 
         // Cascade : les suites partent aussi, depuis la même appli, même si le téléphone est verrouillé.
         // Nova reste active (localisation + temps d'arrière-plan) jusqu'à la dernière.
-        let chain = followUps(of: t)
+        let chain = t.cascade
         guard let last = chain.last?.1 else { return }
         KeepAlive.shared.start(.test)
         let task = UIApplication.shared.beginBackgroundTask(withName: "cascade", expirationHandler: nil)
         for (next, delay) in chain {
             Task { [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                self?.sendTestNow(next, personaID: t.personaID)
+                self?.sendTestNow(next)
                 if delay >= last {
                     KeepAlive.shared.stop(.test)
                     UIApplication.shared.endBackgroundTask(task)
@@ -422,10 +454,10 @@ final class AppStore: ObservableObject {
         }
     }
 
-    private func sendTestNow(_ t: NotifTemplate, personaID: String?) {
-        send(title: t.displayTitle, subtitle: t.subtitle, body: t.body, personaID: personaID)
+    private func sendTestNow(_ t: NotifTemplate) {
+        send(title: t.displayTitle, subtitle: t.subtitle, body: t.body, personaID: t.personaID)
         addHistory([HistoryEntry(date: Date(), title: t.displayTitle, body: t.body,
-                                 personaID: personaID ?? WebPersonas.defaultSender, isTest: true, isRare: t.isRare)])
+                                 personaID: t.sender, isTest: true, isRare: t.isRare)])
     }
 
     private func addHistory(_ entries: [HistoryEntry]) {
@@ -490,6 +522,12 @@ final class AppStore: ObservableObject {
             return
         }
     }
+}
+
+struct SenderGroup: Identifiable {
+    let slot: WebPersonas.Slot
+    let templates: [NotifTemplate]
+    var id: String { slot.id }
 }
 
 // MARK: - Notification classique (secours)

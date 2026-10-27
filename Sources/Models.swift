@@ -12,9 +12,13 @@ struct NotifTemplate: Identifiable, Codable, Hashable {
     var weight: Double = 1          // poids relatif pour le tirage
     var isRare = false              // n'apparaît qu'avec la « chance de rare » de la config
     var maxPerRun = 1               // apparitions max. par scénario (0 = illimité, 1 = pas de doublon)
-    var followUpID: UUID? = nil     // cascade : modèle envoyé automatiquement après celui-ci
-    var followUpDelay: Double = 10  // secondes avant la suite
-    var onlyAsFollowUp = false      // jamais tiré au sort seul, uniquement en suite d'un autre
+    var steps: [CascadeStep] = []   // cascade : notifications envoyées automatiquement après celle-ci
+
+    // Ancien système de cascade (suites rangées comme des modèles à part, reliées entre elles) :
+    // lu uniquement pour convertir les anciennes sauvegardes en `steps`.
+    var followUpID: UUID? = nil
+    var followUpDelay: Double = 10
+    var onlyAsFollowUp = false
 
     var displayTitle: String {
         let t = title.trimmingCharacters(in: .whitespaces)
@@ -26,6 +30,67 @@ struct NotifTemplate: Identifiable, Codable, Hashable {
         title.trimmingCharacters(in: .whitespaces).isEmpty
             && body.trimmingCharacters(in: .whitespaces).isEmpty
             && emoji.isEmpty
+    }
+
+    /// Appli expéditrice (Nova si aucune n'est choisie).
+    var sender: String {
+        WebPersonas.slot(personaID)?.id ?? WebPersonas.defaultSender
+    }
+
+    var frequency: Frequency {
+        get { isRare ? .rare : (weight > 1 ? .often : .normal) }
+        set {
+            isRare = newValue == .rare
+            if newValue != .often {
+                weight = 1
+            } else if weight <= 1 {
+                weight = 3
+            }
+        }
+    }
+
+    /// Peut apparaître plusieurs fois dans un même scénario.
+    var canRepeat: Bool {
+        get { maxPerRun != 1 }
+        set { maxPerRun = newValue ? 0 : 1 }
+    }
+
+    /// Suites de la cascade prêtes à envoyer, avec leur délai depuis cette notification.
+    var cascade: [(NotifTemplate, Double)] {
+        var delay = 0.0
+        return steps.filter { !$0.isEmpty }.map { step in
+            delay += max(1, step.delay)
+            let t = step.title.trimmingCharacters(in: .whitespaces)
+            let next = NotifTemplate(title: t.isEmpty ? displayTitle : t, body: step.body,
+                                     personaID: personaID, isRare: isRare)
+            return (next, delay)
+        }
+    }
+}
+
+/// Une suite de cascade : arrive automatiquement après la notification précédente, depuis la même appli.
+struct CascadeStep: Identifiable, Codable, Hashable {
+    var id = UUID()
+    var delay: Double = 15      // secondes après la notification précédente
+    var title = ""              // vide = même titre que la notification de départ
+    var body = ""
+
+    var isEmpty: Bool {
+        title.trimmingCharacters(in: .whitespaces).isEmpty && body.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+}
+
+enum Frequency: String, CaseIterable, Identifiable {
+    case rare, normal, often
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .rare: return "Rare"
+        case .normal: return "Normale"
+        case .often: return "Souvent"
+        }
     }
 }
 
@@ -146,9 +211,21 @@ extension NotifTemplate {
         weight = c.value(.weight, weight)
         isRare = c.value(.isRare, isRare)
         maxPerRun = c.value(.maxPerRun, 0)   // modèles d'avant ce réglage : illimités, comme avant
+        steps = c.value(.steps, steps)
         followUpID = try? c.decodeIfPresent(UUID.self, forKey: .followUpID)
         followUpDelay = c.value(.followUpDelay, followUpDelay)
         onlyAsFollowUp = c.value(.onlyAsFollowUp, onlyAsFollowUp)
+    }
+}
+
+extension CascadeStep {
+    init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.value(.id, id)
+        delay = c.value(.delay, delay)
+        title = c.value(.title, title)
+        body = c.value(.body, body)
     }
 }
 

@@ -111,6 +111,8 @@ struct PersonasView: View {
             store.message = "Adresse du site invalide."
             return
         }
+        // Nova garde l'image choisie pour l'afficher avec cet expéditeur
+        if let icon { SenderIcons.saveCustom(icon, for: slot.id) }
         UIApplication.shared.open(url)
     }
 }
@@ -124,11 +126,7 @@ private struct PersonaRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(slot.preview)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 44, height: 44)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            SenderIcon(slot: slot, size: 44)
             VStack(alignment: .leading, spacing: 2) {
                 Text(persona?.name ?? slot.label)
                     .font(BW.font(.body, .semibold))
@@ -194,7 +192,7 @@ private struct CustomPersonaSheet: View {
                             if let icon {
                                 Image(uiImage: icon).resizable().scaledToFill()
                             } else {
-                                Image("Emblem").resizable().scaledToFill()
+                                Image(uiImage: SenderIcons.image(slot)).resizable().scaledToFill()
                             }
                         }
                         .frame(width: 56, height: 56)

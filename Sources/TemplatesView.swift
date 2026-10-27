@@ -1,15 +1,16 @@
 import SwiftUI
 
-// MARK: - Liste des modèles
+// MARK: - Liste des modèles, rangés par appli expéditrice
 
 struct TemplatesView: View {
     @EnvironmentObject var store: AppStore
     @State private var editing: NotifTemplate?
     @State private var search = ""
+    @State private var filter: String?      // appli affichée (nil = toutes)
 
     var body: some View {
-        let main = store.templates.filter { !$0.onlyAsFollowUp && matches($0) }
-        let suites = store.templates.filter { $0.onlyAsFollowUp && matches($0) }
+        let visible = store.templates.filter { (filter == nil || $0.sender == filter) && matches($0) }
+        let groups = store.groupedBySender(visible)
 
         NavigationStack {
             List {
@@ -17,30 +18,27 @@ struct TemplatesView: View {
                     Text("Aucun modèle. Appuie sur + pour en créer un.")
                         .foregroundStyle(BW.mist)
                         .listRowBackground(BW.hull)
+                } else if groups.isEmpty {
+                    Text(search.isEmpty ? "Aucun modèle pour cette appli." : "Aucun résultat.")
+                        .foregroundStyle(BW.mist)
+                        .listRowBackground(BW.hull)
                 }
-                if !main.isEmpty {
+                ForEach(groups) { group in
                     Section {
-                        rows(main)
+                        rows(group.templates)
                     } header: {
-                        Text("Notifications · \(main.count)")
-                    }
-                }
-                if !suites.isEmpty || search.isEmpty {
-                    Section {
-                        if suites.isEmpty {
-                            Text("Aucune suite pour l'instant.")
-                                .foregroundStyle(BW.mist)
-                                .listRowBackground(BW.hull)
+                        SenderGroupHeader(slot: group.slot, count: group.templates.count) {
+                            Button { create(for: group.slot.id) } label: {
+                                Image(systemName: "plus.circle.fill").font(.body)
+                            }
                         }
-                        rows(suites)
-                    } header: {
-                        Text("Suites · cascade uniquement · \(suites.count)")
-                    } footer: {
-                        Text("Une suite n'est jamais tirée au sort : elle arrive seulement après la notification qui la déclenche (section Cascade d'un modèle).")
                     }
                 }
             }
             .bwForm()
+            .safeAreaInset(edge: .top, spacing: 0) {
+                SenderFilterBar(selection: $filter)
+            }
             .searchable(text: $search, prompt: "Rechercher un modèle")
             .navigationTitle("Modèles")
             .navigationBarTitleDisplayMode(.inline)
@@ -49,18 +47,7 @@ struct TemplatesView: View {
                     EditButton()
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button { editing = NotifTemplate() } label: {
-                            Label("Nouvelle notification", systemImage: "bell")
-                        }
-                        Button {
-                            var suite = NotifTemplate()
-                            suite.onlyAsFollowUp = true
-                            editing = suite
-                        } label: {
-                            Label("Nouvelle suite (cascade)", systemImage: "arrow.turn.down.right")
-                        }
-                    } label: {
+                    Button { create(for: filter) } label: {
                         Image(systemName: "plus")
                     }
                 }
@@ -71,15 +58,22 @@ struct TemplatesView: View {
         }
     }
 
+    private func create(for sender: String?) {
+        var t = NotifTemplate()
+        if let sender, sender != WebPersonas.defaultSender { t.personaID = sender }
+        editing = t
+    }
+
     private func matches(_ t: NotifTemplate) -> Bool {
         let query = search.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return true }
-        let sender = WebPersonas.slot(t.personaID ?? WebPersonas.defaultSender)?.label ?? ""
-        return [t.displayTitle, t.subtitle, t.body, sender].contains { $0.localizedCaseInsensitiveContains(query) }
+        let sender = WebPersonas.slot(t.sender).map { store.senderName($0) } ?? ""
+        let texts = [t.displayTitle, t.subtitle, t.body, sender] + t.steps.flatMap { [$0.title, $0.body] }
+        return texts.contains { $0.localizedCaseInsensitiveContains(query) }
     }
 
     @ViewBuilder private func rows(_ list: [NotifTemplate]) -> some View {
-        // Réordonner seulement hors recherche, à l'intérieur de chaque catégorie
+        // Réordonner seulement hors recherche, à l'intérieur de chaque appli
         let move: ((IndexSet, Int) -> Void)? = search.isEmpty
             ? { from, to in store.moveTemplates(list, from: from, to: to) }
             : nil
@@ -114,64 +108,170 @@ struct TemplatesView: View {
     }
 }
 
-private struct TemplateRow: View {
+/// Filtre par appli, toujours visible en haut de la liste.
+private struct SenderFilterBar: View {
     @EnvironmentObject var store: AppStore
-    let template: NotifTemplate
-
-    private var followUpTitle: String? {
-        guard let id = template.followUpID, let next = store.templates.first(where: { $0.id == id }) else { return nil }
-        return next.displayTitle.isEmpty ? "Sans titre" : next.displayTitle
-    }
+    @Binding var selection: String?
 
     var body: some View {
-        let slot = WebPersonas.slot(template.personaID ?? WebPersonas.defaultSender)
-        HStack(spacing: 12) {
-            SenderIcon(slot: slot, size: 44)
+        let counts = Dictionary(grouping: store.templates, by: \.sender).mapValues(\.count)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                chip(nil, label: "Toutes", count: store.templates.count)
+                ForEach(WebPersonas.slots.filter { counts[$0.id] != nil || $0.id == selection }) { slot in
+                    chip(slot, label: store.senderName(slot), count: counts[slot.id] ?? 0)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+        .background(BW.abyss.opacity(0.97))
+    }
+
+    private func chip(_ slot: WebPersonas.Slot?, label: String, count: Int) -> some View {
+        let selected = selection == slot?.id
+        return Button {
+            withAnimation(.easeInOut(duration: 0.2)) { selection = slot?.id }
+        } label: {
+            HStack(spacing: 6) {
+                if let slot { SenderIcon(slot: slot, size: 22) }
+                Text(label).lineLimit(1)
+                Text("\(count)")
+                    .foregroundStyle(selected ? BW.abyss.opacity(0.6) : BW.mist)
+                    .monospacedDigit()
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(selected ? BW.abyss : BW.parchment)
+            .padding(.leading, slot == nil ? 12 : 5)
+            .padding(.trailing, 12)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(selected ? BW.gold : BW.hull))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// En-tête d'une catégorie : icône et nom de l'appli expéditrice.
+struct SenderGroupHeader<Trailing: View>: View {
+    @EnvironmentObject var store: AppStore
+    let slot: WebPersonas.Slot
+    let count: Int
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: 8) {
+            SenderIcon(slot: slot, size: 22)
+            Text(store.senderName(slot))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(BW.parchment)
+            Text("\(count)")
+                .font(.subheadline)
+                .foregroundStyle(BW.mist)
+            if store.persona(slot.id) == nil {
+                Text("non installée")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(BW.gold)
+            }
+            Spacer()
+            trailing
+        }
+        .textCase(nil)
+    }
+}
+
+private struct TemplateRow: View {
+    let template: NotifTemplate
+
+    var body: some View {
+        let steps = template.steps.filter { !$0.isEmpty }
+        HStack(alignment: .top, spacing: 12) {
+            SenderIcon(slot: WebPersonas.slot(template.sender), size: 40)
 
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(template.displayTitle.isEmpty ? "Sans titre" : template.displayTitle)
-                        .font(BW.font(.body, .semibold))
-                        .foregroundStyle(BW.parchment)
-                        .lineLimit(1)
-                    if template.isRare {
-                        Label("Rare", systemImage: "star.fill")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(BW.gold)
-                    }
+                Text(template.displayTitle.isEmpty ? "Sans titre" : template.displayTitle)
+                    .font(BW.font(.body, .semibold))
+                    .foregroundStyle(BW.parchment)
+                    .lineLimit(1)
+                if !template.body.isEmpty {
+                    Text(template.body)
+                        .font(.footnote)
+                        .foregroundStyle(BW.mist)
+                        .lineLimit(2)
                 }
-                Text(template.body)
-                    .font(.footnote)
+                if !steps.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(steps.prefix(2)) { step in
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.turn.down.right")
+                                Text(step.body.isEmpty ? step.title : step.body)
+                                    .lineLimit(1)
+                            }
+                        }
+                        if steps.count > 2 {
+                            Text("+ \(steps.count - 2) autre\(steps.count > 3 ? "s" : "")")
+                                .padding(.leading, 18)
+                        }
+                    }
+                    .font(.caption)
                     .foregroundStyle(BW.mist)
-                    .lineLimit(2)
-                HStack(spacing: 6) {
-                    Text(slot?.label ?? "Nova")
-                    if template.onlyAsFollowUp {
-                        Text("· en suite uniquement")
-                    }
-                    if let next = followUpTitle {
-                        Label(next, systemImage: "arrow.turn.down.right")
-                            .lineLimit(1)
-                    }
                 }
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(BW.mist)
+                badges
             }
             Spacer(minLength: 0)
-            VStack(alignment: .trailing, spacing: 4) {
-                if template.weight != 1 {
-                    Text("×\(Int(template.weight))")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(BW.gold)
-                }
-                if template.maxPerRun > 0 {
-                    Label("\(template.maxPerRun)", systemImage: "number.circle")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(BW.mist)
-                }
-            }
         }
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder private var badges: some View {
+        let steps = template.steps.filter { !$0.isEmpty }.count
+        if template.frequency != .normal || template.canRepeat || steps > 0 {
+            HStack(spacing: 10) {
+                if template.frequency == .rare {
+                    Label("Rare", systemImage: "star.fill").foregroundStyle(BW.gold)
+                }
+                if template.frequency == .often {
+                    Label("Souvent", systemImage: "bolt.fill").foregroundStyle(BW.gold)
+                }
+                if steps > 0 {
+                    Label("Cascade de \(steps + 1)", systemImage: "square.stack.3d.down.right")
+                }
+                if template.canRepeat {
+                    Label("Répétable", systemImage: "repeat")
+                }
+            }
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(BW.mist)
+            .padding(.top, 2)
+        }
+    }
+}
+
+// MARK: - Icônes des applis expéditrices
+
+/// Même icône que celle installée sur l'écran d'accueil : celle de l'appli web, ou l'image choisie
+/// pour un expéditeur « Perso ».
+enum SenderIcons {
+    private static var cache: [String: UIImage] = [:]
+    private static let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Icones")
+
+    static func image(_ slot: WebPersonas.Slot?) -> UIImage {
+        let id = slot?.id ?? WebPersonas.defaultSender
+        if let cached = cache[id] { return cached }
+        let custom = slot?.custom == true ? UIImage(contentsOfFile: file(id).path) : nil
+        let image = custom ?? UIImage(named: "Preview-Persona-" + id) ?? UIImage(named: "Emblem") ?? UIImage()
+        cache[id] = image
+        return image
+    }
+
+    static func saveCustom(_ data: Data, for id: String) {
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? data.write(to: file(id), options: .atomic)
+        cache[id] = nil
+    }
+
+    private static func file(_ id: String) -> URL {
+        folder.appendingPathComponent(id + ".jpg")
     }
 }
 
@@ -181,10 +281,11 @@ struct SenderIcon: View {
     var size: CGFloat = 44
 
     var body: some View {
-        Image(slot?.preview ?? "Emblem")
+        Image(uiImage: SenderIcons.image(slot))
             .resizable()
             .scaledToFill()
             .frame(width: size, height: size)
+            .background(Color.black)    // comme sur l'écran d'accueil, la transparence apparaît en noir
             .clipShape(RoundedRectangle(cornerRadius: size * 0.225, style: .continuous))
     }
 }
@@ -228,33 +329,94 @@ struct NotificationPreview: View {
     }
 }
 
+/// La notification et toute sa cascade, dans l'ordre d'arrivée.
+private struct CascadePreview: View {
+    let template: NotifTemplate
+
+    var body: some View {
+        let slot = WebPersonas.slot(template.sender)
+        VStack(spacing: 6) {
+            NotificationPreview(title: template.displayTitle, subtitle: template.subtitle,
+                                message: template.body, slot: slot)
+            ForEach(Array(template.cascade.enumerated()), id: \.offset) { _, item in
+                Label("\(formatDuration(item.1)) plus tard", systemImage: "arrow.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(BW.mist)
+                NotificationPreview(title: item.0.displayTitle, subtitle: "", message: item.0.body, slot: slot)
+            }
+        }
+    }
+}
+
+// MARK: - Choix de l'appli expéditrice
+
+private struct SenderPicker: View {
+    @EnvironmentObject var store: AppStore
+    @Binding var personaID: String?     // nil = Nova
+
+    var body: some View {
+        let current = WebPersonas.slot(personaID)?.id ?? WebPersonas.defaultSender
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 12) {
+                ForEach(WebPersonas.slots) { slot in
+                    let selected = slot.id == current
+                    Button {
+                        personaID = slot.id == WebPersonas.defaultSender ? nil : slot.id
+                    } label: {
+                        VStack(spacing: 6) {
+                            SenderIcon(slot: slot, size: 50)
+                                .opacity(selected || store.persona(slot.id) != nil ? 1 : 0.45)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                                        .strokeBorder(selected ? BW.gold : Color.clear, lineWidth: 2.5)
+                                        .padding(-4)
+                                )
+                            Text(store.senderName(slot))
+                                .font(.caption2.weight(selected ? .bold : .regular))
+                                .foregroundStyle(selected ? BW.gold : BW.parchment)
+                                .lineLimit(1)
+                        }
+                        .frame(width: 62)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 6)
+        }
+    }
+}
+
 // MARK: - Édition d'un modèle
 
 struct TemplateEditor: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) private var dismiss
 
-    let original: NotifTemplate
     let isNew: Bool
-    var onSave: ((NotifTemplate) -> Void)? = nil
+    @State private var initial: NotifTemplate
     @State private var draft: NotifTemplate
-    @State private var newFollowUp: NotifTemplate?
+    @State private var confirmDelete = false
 
-    private static let emojis = ["💬", "📷", "💳", "💰", "🔔", "✅", "⚠️", "🎉", "❤️", "⭐️", "📸", "🛒", "🔥", "👋"]
+    private static let maxSteps = 10
 
-    init(original: NotifTemplate, isNew: Bool, onSave: ((NotifTemplate) -> Void)? = nil) {
-        self.original = original
+    init(original: NotifTemplate, isNew: Bool) {
+        // L'emoji fait partie du titre : un seul champ à remplir
+        var t = original
+        if !t.emoji.isEmpty {
+            t.title = t.displayTitle
+            t.emoji = ""
+        }
         self.isNew = isNew
-        self.onSave = onSave
-        _draft = State(initialValue: original)
+        _initial = State(initialValue: t)
+        _draft = State(initialValue: t)
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    NotificationPreview(title: draft.displayTitle, subtitle: draft.subtitle, message: draft.body,
-                                        slot: WebPersonas.slot(draft.personaID ?? WebPersonas.defaultSender))
+                    CascadePreview(template: draft)
                         .animation(.easeInOut(duration: 0.2), value: draft)
                         .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                         .listRowBackground(Color.clear)
@@ -263,120 +425,81 @@ struct TemplateEditor: View {
                 }
 
                 Section {
-                    Picker("Expéditeur", selection: $draft.personaID) {
-                        Text(senderLabel(WebPersonas.defaultSender)).tag(String?.none)
-                        ForEach(WebPersonas.slots.filter { $0.id != WebPersonas.defaultSender }) { slot in
-                            Text(senderLabel(slot.id)).tag(Optional(slot.id))
-                        }
-                    }
+                    SenderPicker(personaID: $draft.personaID)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
                 } header: {
-                    Text("Expéditeur")
+                    Text("Appli expéditrice")
                 } footer: {
-                    Text("La notification arrive depuis cette appli, avec son icône et son nom. À installer une fois dans Configurations › Applis expéditrices.")
+                    Text(senderFooter)
                 }
                 .listRowBackground(BW.hull)
 
-                Section("Contenu") {
-                    TextField("Titre (ou nom de l'expéditeur)", text: $draft.title)
-                    TextField("Sous-titre (optionnel)", text: $draft.subtitle)
+                Section("Notification") {
+                    TextField("Titre (ex. le nom de l'expéditeur)", text: $draft.title)
                     TextField("Message", text: $draft.body, axis: .vertical)
                         .lineLimit(2...6)
-                    HStack {
-                        TextField("Emoji", text: $draft.emoji)
-                            .frame(width: 56)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 6) {
-                                ForEach(Self.emojis, id: \.self) { e in
-                                    Button { draft.emoji = e } label: { Text(e).font(.title3) }
-                                        .buttonStyle(.plain)
-                                }
-                                Button { draft.emoji = "" } label: {
-                                    Image(systemName: "xmark.circle").foregroundStyle(BW.mist)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
+                    TextField("Sous-titre (optionnel)", text: $draft.subtitle)
                 }
                 .listRowBackground(BW.hull)
 
-                if !draft.onlyAsFollowUp {
-                Section {
-                    Stepper(value: $draft.weight, in: 1...10, step: 1) {
-                        HStack {
-                            Text("Fréquence")
-                            Spacer()
-                            Text("×\(Int(draft.weight))").foregroundStyle(BW.gold).monospacedDigit()
+                ForEach(Array(draft.steps.enumerated()), id: \.element.id) { index, step in
+                    Section {
+                        DurationStepper(label: index == 0 ? "Après la notification" : "Après la suite \(index)",
+                                        seconds: stepBinding(step.id).delay, range: 1...3600)
+                        TextField("Titre (sinon « \(mainTitle) »)", text: stepBinding(step.id).title)
+                        TextField("Message", text: stepBinding(step.id).body, axis: .vertical)
+                            .lineLimit(1...6)
+                        Button(role: .destructive) { removeStep(step.id) } label: {
+                            Label("Retirer cette suite", systemImage: "minus.circle")
                         }
+                    } header: {
+                        Label("Suite \(index + 1)", systemImage: "arrow.turn.down.right")
                     }
-                    Toggle(isOn: $draft.isRare) {
-                        Label("Notification rare", systemImage: "star.fill")
+                    .listRowBackground(BW.hull)
+                }
+
+                Section {
+                    Button { addStep() } label: {
+                        Label(draft.steps.isEmpty ? "Ajouter une suite" : "Ajouter une autre suite",
+                              systemImage: "plus.circle.fill")
                     }
+                    .disabled(draft.steps.count >= Self.maxSteps)
+                } header: {
+                    if draft.steps.isEmpty { Text("Cascade") }
+                } footer: {
+                    Text(cascadeFooter)
+                }
+                .listRowBackground(BW.hull)
+
+                Section {
+                    Picker("Fréquence", selection: $draft.frequency) {
+                        ForEach(Frequency.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    Toggle("Peut revenir plusieurs fois", isOn: $draft.canRepeat)
                 } header: {
                     Text("Apparition")
                 } footer: {
-                    Text("Un modèle ×3 sort trois fois plus souvent qu'un modèle ×1. Un modèle rare n'apparaît que selon la « chance de rare » réglée dans la configuration.")
-                }
-                .listRowBackground(BW.hull)
-
-                Section {
-                    Stepper(value: $draft.maxPerRun, in: 0...20) {
-                        HStack {
-                            Text("Maximum par scénario")
-                            Spacer()
-                            Text(verbatim: draft.maxPerRun == 0 ? "Illimité" : "\(draft.maxPerRun) fois")
-                                .foregroundStyle(BW.gold)
-                                .monospacedDigit()
-                        }
-                    }
-                } header: {
-                    Text("Répartition")
-                } footer: {
-                    Text("« 1 fois » (par défaut) : cette notification n'apparaît qu'une seule fois par scénario, jamais en double. « Illimité » : elle peut revenir plusieurs fois.")
-                }
-                .listRowBackground(BW.hull)
-                }
-
-                Section {
-                    Picker("Notification suivante", selection: $draft.followUpID) {
-                        Text("Aucune").tag(UUID?.none)
-                        ForEach(followUpCandidates.filter(\.onlyAsFollowUp)) { t in
-                            Text("↳ " + label(of: t)).tag(Optional(t.id))
-                        }
-                        ForEach(followUpCandidates.filter { !$0.onlyAsFollowUp }) { t in
-                            Text(label(of: t)).tag(Optional(t.id))
-                        }
-                    }
-                    if draft.followUpID != nil {
-                        DurationStepper(label: "Délai avant la suite", seconds: $draft.followUpDelay, range: 1...3600)
-                    }
-                    Button {
-                        var suite = NotifTemplate()
-                        suite.title = draft.title
-                        suite.personaID = draft.personaID
-                        suite.onlyAsFollowUp = true
-                        newFollowUp = suite
-                    } label: {
-                        Label("Créer une nouvelle suite…", systemImage: "plus.circle")
-                    }
-                    Toggle("Ce modèle est une suite (cascade uniquement)", isOn: $draft.onlyAsFollowUp)
-                } header: {
-                    Text("Cascade")
-                } footer: {
-                    Text("Notification suivante : envoyée automatiquement après celle-ci, à chaque fois, depuis la même appli expéditrice (les suites sont marquées ↳). Une suite n'est jamais tirée au sort seule : elle est rangée dans la catégorie « Suites ».")
+                    Text("Souvent : sort plus souvent qu'une notification normale. Rare : n'apparaît que selon la « chance de rare » réglée dans la configuration. Sans « Peut revenir », elle n'arrive qu'une fois par scénario.")
                 }
                 .listRowBackground(BW.hull)
 
                 Section {
                     Button { store.sendTest(draft) } label: {
-                        Label("Envoyer un test maintenant", systemImage: "bell.badge.fill")
+                        Label(draft.cascade.isEmpty ? "Envoyer un test maintenant" : "Tester avec la cascade",
+                              systemImage: "bell.badge.fill")
                     }
                     .disabled(draft.isEmpty)
+                    if !isNew {
+                        Button(role: .destructive) { confirmDelete = true } label: {
+                            Label("Supprimer ce modèle", systemImage: "trash")
+                        }
+                    }
                 }
                 .listRowBackground(BW.hull)
             }
             .bwForm()
-            .navigationTitle(isNew ? (draft.onlyAsFollowUp ? "Nouvelle suite" : "Nouveau modèle") : "Modifier")
+            .navigationTitle(isNew ? "Nouveau modèle" : "Modifier")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -384,33 +507,60 @@ struct TemplateEditor: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Enregistrer") {
-                        store.upsertTemplate(draft)
-                        onSave?(draft)
+                        var t = draft
+                        t.steps.removeAll { $0.isEmpty }
+                        store.upsertTemplate(t)
                         dismiss()
                     }
                     .disabled(draft.isEmpty)
                 }
             }
-        }
-        .interactiveDismissDisabled(draft != original)
-        .sheet(item: $newFollowUp) { suite in
-            TemplateEditor(original: suite, isNew: true) { saved in
-                draft.followUpID = saved.id
+            .confirmationDialog("Supprimer ce modèle ?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("Supprimer", role: .destructive) {
+                    store.deleteTemplate(initial)
+                    dismiss()
+                }
             }
         }
+        .interactiveDismissDisabled(draft != initial)
     }
 
-    private var followUpCandidates: [NotifTemplate] {
-        store.templates.filter { $0.id != draft.id && !$0.isEmpty }
+    private var mainTitle: String {
+        draft.displayTitle.isEmpty ? "même titre" : draft.displayTitle
     }
 
-    private func label(of t: NotifTemplate) -> String {
-        let title = t.displayTitle.isEmpty ? "Sans titre" : t.displayTitle
-        return t.body.isEmpty ? title : title + " · " + t.body
+    private var senderFooter: String {
+        let slot = WebPersonas.slot(draft.sender)
+        let name = slot.map { store.senderName($0) } ?? "Nova"
+        if store.persona(draft.sender) == nil {
+            return "« \(name) » n'est pas encore installée : la notification arrivera depuis Nova. Installe-la dans Configurations › Applis expéditrices."
+        }
+        return "La notification arrive depuis « \(name) », avec son icône et son nom."
     }
 
-    private func senderLabel(_ id: String) -> String {
-        if let persona = store.persona(id) { return persona.name }
-        return (WebPersonas.slot(id)?.label ?? id) + " (non installé)"
+    private var cascadeFooter: String {
+        if draft.steps.isEmpty {
+            return "Une cascade envoie automatiquement d'autres notifications après celle-ci, depuis la même appli. Par exemple « t'es là ? », puis 20 s plus tard « allô ? réponds »."
+        }
+        return "Les suites arrivent à chaque fois après cette notification, dans l'ordre, même téléphone verrouillé. Titre vide : elles gardent « \(mainTitle) »."
+    }
+
+    private func stepBinding(_ id: UUID) -> Binding<CascadeStep> {
+        Binding(
+            get: { draft.steps.first { $0.id == id } ?? CascadeStep(id: id) },
+            set: { v in
+                if let i = draft.steps.firstIndex(where: { $0.id == id }) { draft.steps[i] = v }
+            }
+        )
+    }
+
+    private func addStep() {
+        var step = CascadeStep()
+        if let last = draft.steps.last { step.delay = last.delay }
+        withAnimation { draft.steps.append(step) }
+    }
+
+    private func removeStep(_ id: UUID) {
+        withAnimation { draft.steps.removeAll { $0.id == id } }
     }
 }

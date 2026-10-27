@@ -3,8 +3,9 @@ name: Compiler l'app
 on:
   push:
     branches: [main]
-    # Les pages des applis expéditrices (docs/) n'ont pas besoin d'un nouveau build de l'app
-    paths-ignore: ['docs/**']
+    # Les pages des applis expéditrices (docs/) n'ont pas besoin d'un nouveau build de l'app,
+    # sauf leurs icônes, qui sont aussi affichées dans Nova
+    paths: ['**', '!docs/**', 'docs/p/*/icon-180.png']
   workflow_dispatch:
 
 permissions:
@@ -15,6 +16,17 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Reprendre les icônes des applis expéditrices
+        # Nova affiche la même icône que celle installée sur l'écran d'accueil (docs/p/<appli>/icon-180.png)
+        run: |
+          for icon in docs/p/*/icon-180.png; do
+            slot=$(basename "$(dirname "$icon")")
+            dir="Sources/Assets.xcassets/Preview-Persona-$slot.imageset"
+            mkdir -p "$dir"
+            cp "$icon" "$dir/preview.png"
+            printf '{"images":[{"filename":"preview.png","idiom":"universal"}],"info":{"author":"xcode","version":1}}' > "$dir/Contents.json"
+          done
 
       - name: Installer XcodeGen
         run: brew install xcodegen

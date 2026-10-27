@@ -4,7 +4,7 @@ import Foundation
 
 enum Presets {
     /// À incrémenter quand les exemples ou les données changent : la migration du store s'exécute alors une fois.
-    static let version = 5
+    static let version = 6
 
     private struct Spec {
         var title: String
@@ -13,11 +13,15 @@ enum Presets {
         var persona: String
         var weight: Double = 1
         var isRare = false
-        var key: String? = nil          // identifiant pour les cascades
-        var followUp: String? = nil     // clé du modèle envoyé ensuite
-        var followUpDelay: Double = 10
-        var onlyAsFollowUp = false
+        var then: [Next] = []           // cascade
         var since = 2                   // version où l'exemple est apparu
+    }
+
+    /// Suite de cascade d'un exemple (titre vide = même titre).
+    fileprivate struct Next {
+        var after: Double
+        var title = ""
+        var body: String
     }
 
     private static let specs: [Spec] = [
@@ -33,11 +37,11 @@ enum Presets {
         Spec(title: "Chloé", body: "Je suis devant chez toi 🚪", persona: "messages", since: 5),
         Spec(title: "Week-end ski 🎿", body: "Max : j'ai réservé le chalet, 45 € chacun !", persona: "messages", since: 5),
         Spec(title: "Inès", body: "J'ai une dinguerie à te raconter 😱", persona: "messages",
-             key: "ines1", followUp: "ines2", followUpDelay: 15, since: 5),
-        Spec(title: "Inès", body: "Appelle-moi dès que tu peux", persona: "messages",
-             key: "ines2", followUp: "ines3", followUpDelay: 20, onlyAsFollowUp: true, since: 5),
-        Spec(title: "Inès", body: "Bon je t'envoie un vocal 🎙️", persona: "messages",
-             key: "ines3", onlyAsFollowUp: true, since: 5),
+             then: [Next(after: 15, body: "Appelle-moi dès que tu peux"),
+                    Next(after: 20, body: "Bon je t'envoie un vocal 🎙️")], since: 5),
+        Spec(title: "Famille 🏡", body: "Maman : Qui vient manger dimanche ?", persona: "messages",
+             then: [Next(after: 8, body: "Papa : Moi !"),
+                    Next(after: 20, body: "Mamie : Je fais un gâteau 🎂")], since: 6),
         Spec(title: "Numéro inconnu", body: "Salut, c'est bien toi ? On s'est croisés samedi 🙂",
              persona: "messages", isRare: true, since: 5),
 
@@ -52,23 +56,22 @@ enum Presets {
         Spec(title: "Souvenir 📸", body: "Il y a 3 ans aujourd'hui… Revois tes photos de vacances.", persona: "photos", since: 5),
         Spec(title: "Live en cours 🔴", body: "lea.martin est en direct maintenant.", persona: "photos", since: 5),
         Spec(title: "emma.lrd a commenté", body: "« Trop stylé 😍 »", persona: "photos",
-             key: "emma1", followUp: "emma2", followUpDelay: 12, since: 5),
-        Spec(title: "emma.lrd a commenté", body: "« Tu m'envoies la photo ? »", persona: "photos",
-             key: "emma2", onlyAsFollowUp: true, since: 5),
+             then: [Next(after: 12, body: "« Tu m'envoies la photo ? »")], since: 5),
         Spec(title: "Ta story a été vue 500 fois 👀", body: "Elle cartonne aujourd'hui !",
              persona: "photos", isRare: true, since: 5),
 
         // ───────── Chat ─────────
         Spec(title: "Les potes · #général", body: "Alex : quelqu'un est chaud pour une partie ce soir ?",
              persona: "chat", weight: 2),
-        Spec(title: "Sarah", body: "t'es là ? 👀", persona: "chat", key: "sarah1", followUp: "sarah2", followUpDelay: 20),
-        Spec(title: "Sarah", body: "allô ? réponds 😤", persona: "chat", key: "sarah2", onlyAsFollowUp: true, since: 4),
+        Spec(title: "Sarah", body: "t'es là ? 👀", persona: "chat",
+             then: [Next(after: 20, body: "allô ? réponds 😤")]),
         Spec(title: "Mention dans #projets", body: "Lucas : tu peux regarder ça quand tu as le temps ?", persona: "chat"),
         Spec(title: "Serveur Gaming · #annonces", body: "Tournoi ce soir 21 h, inscriptions ouvertes !",
              persona: "chat", since: 5),
         Spec(title: "Nathan", body: "go vocal ?", persona: "chat",
-             key: "nathan1", followUp: "nathan2", followUpDelay: 15, since: 5),
-        Spec(title: "Nathan", body: "on t'attend 🎧", persona: "chat", key: "nathan2", onlyAsFollowUp: true, since: 5),
+             then: [Next(after: 15, body: "on t'attend 🎧")], since: 5),
+        Spec(title: "Clara", body: "tu dors ?", persona: "chat",
+             then: [Next(after: 30, body: "bon bonne nuit alors 😴")], since: 6),
         Spec(title: "Appel entrant 📞", body: "Alex t'appelle dans #vocal", persona: "chat", since: 5),
         Spec(title: "Réaction", body: "Sarah a réagi 😂 à ton message.", persona: "chat", since: 5),
         Spec(title: "Nouveau message privé", body: "Quelqu'un t'a envoyé un message.", persona: "chat", since: 5),
@@ -85,6 +88,9 @@ enum Presets {
              persona: "banque", since: 5),
         Spec(title: "Bonne nouvelle 💶", body: "Ton remboursement d'impôts de 312 € est arrivé.",
              persona: "banque", isRare: true, since: 5),
+        Spec(title: "Paiement refusé ❌", body: "Carte •••• 4821 : 59,90 € refusé.", persona: "banque",
+             then: [Next(after: 5, title: "Alerte sécurité 🔒", body: "Confirme ou bloque cette opération dans l'appli.")],
+             since: 6),
 
         // ───────── Social ─────────
         Spec(title: "Nouvel abonné", body: "camille.dvl a commencé à vous suivre.", persona: "social"),
@@ -112,9 +118,8 @@ enum Presets {
 
         // ───────── Boutique ─────────
         Spec(title: "Commande expédiée 🚚", body: "Ta commande n° 1042 est en route. Livraison prévue demain.",
-             persona: "boutique", key: "commande", followUp: "livreur", followUpDelay: 30),
-        Spec(title: "Ton livreur arrive 📍", body: "Livraison dans environ 10 minutes. Sois prêt !",
-             persona: "boutique", key: "livreur", onlyAsFollowUp: true, since: 4),
+             persona: "boutique",
+             then: [Next(after: 30, title: "Ton livreur arrive 📍", body: "Livraison dans environ 10 minutes. Sois prêt !")]),
         Spec(title: "Ton panier t'attend", body: "3 articles sont toujours dans ton panier.", persona: "boutique"),
         Spec(title: "Vente flash ⚡", body: "-30 % sur une sélection pendant 24 h seulement.", persona: "boutique"),
         Spec(title: "Nouveautés 🛍️", body: "La nouvelle collection est arrivée.", persona: "boutique", since: 5),
@@ -122,9 +127,7 @@ enum Presets {
         Spec(title: "De retour en stock", body: "La « Veste en jean » est de nouveau disponible.", persona: "boutique", since: 5),
         Spec(title: "Retour accepté", body: "Ton remboursement de 29,90 € est en cours.", persona: "boutique", since: 5),
         Spec(title: "Commande livrée ✅", body: "Ta commande a été déposée devant ta porte.", persona: "boutique",
-             key: "livree", followUp: "avis", followUpDelay: 60, since: 5),
-        Spec(title: "Donne ton avis ⭐", body: "Comment s'est passée ta commande ?", persona: "boutique",
-             key: "avis", onlyAsFollowUp: true, since: 5),
+             then: [Next(after: 60, title: "Donne ton avis ⭐", body: "Comment s'est passée ta commande ?")], since: 5),
 
         // ───────── Ventes ─────────
         Spec(title: "Nouveau favori", body: "lucie_b a ajouté « Veste en jean » à ses favoris.", persona: "ventes"),
@@ -135,22 +138,17 @@ enum Presets {
         Spec(title: "Baisse de prix 📉", body: "Un article de tes favoris passe à 12 €.", persona: "ventes", since: 5),
         Spec(title: "Évaluation reçue ⭐", body: "lucie_b t'a laissé 5 étoiles.", persona: "ventes", since: 5),
         Spec(title: "Offre acceptée 🤝", body: "Ton offre de 15 € a été acceptée.", persona: "ventes",
-             key: "offre", followUp: "envoi", followUpDelay: 45, since: 5),
-        Spec(title: "Envoi à préparer 📦", body: "Tu as 5 jours pour envoyer l'article.", persona: "ventes",
-             key: "envoi", onlyAsFollowUp: true, since: 5),
+             then: [Next(after: 45, title: "Envoi à préparer 📦", body: "Tu as 5 jours pour envoyer l'article.")],
+             since: 5),
     ]
 
     private static func make(_ spec: Spec) -> NotifTemplate {
         NotifTemplate(title: spec.title, subtitle: spec.subtitle, body: spec.body,
-                      personaID: spec.persona, weight: spec.weight, isRare: spec.isRare,
-                      onlyAsFollowUp: spec.onlyAsFollowUp)
+                      personaID: spec.persona, weight: spec.weight, isRare: spec.isRare, steps: steps(spec))
     }
 
-    /// Retrouve l'exemple dans les modèles existants (une suite se reconnaît aussi à son texte).
-    private static func find(_ spec: Spec, in templates: [NotifTemplate]) -> Int? {
-        templates.firstIndex { t in
-            t.title == spec.title && (spec.onlyAsFollowUp ? t.body == spec.body : !t.onlyAsFollowUp)
-        }
+    private static func steps(_ spec: Spec) -> [CascadeStep] {
+        spec.then.map { CascadeStep(delay: $0.after, title: $0.title, body: $0.body) }
     }
 
     /// Modèles d'exemple d'une nouvelle installation.
@@ -173,30 +171,18 @@ enum Presets {
     }
 
     /// Ajoute les exemples manquants apparus après la version `newerThan` (0 = tous), sans modifier
-    /// les modèles existants, sauf pour compléter un expéditeur ou une suite qui n'étaient pas choisis.
+    /// les modèles existants, sauf pour compléter un expéditeur ou une cascade qui n'étaient pas choisis.
     /// Renvoie l'identifiant de la première configuration ajoutée, s'il y en a une.
     @discardableResult
     static func merge(templates: inout [NotifTemplate], configs: inout [SendConfig],
                       newerThan version: Int = 0, includeConfigs: Bool = true) -> UUID? {
-        let selected = specs.filter { $0.since > version }
-        var ids: [String: UUID] = [:]
-        for spec in selected {
-            let index: Int
-            if let i = find(spec, in: templates) {
+        for spec in specs where spec.since > version {
+            if let i = templates.firstIndex(where: { $0.title == spec.title }) {
                 if templates[i].personaID == nil { templates[i].personaID = spec.persona }
-                index = i
+                if templates[i].steps.isEmpty { templates[i].steps = steps(spec) }
             } else {
                 templates.append(make(spec))
-                index = templates.count - 1
             }
-            if let key = spec.key { ids[key] = templates[index].id }
-        }
-        // Cascades des exemples (sans écraser une suite déjà choisie)
-        for spec in selected {
-            guard let followKey = spec.followUp, let target = ids[followKey],
-                  let i = find(spec, in: templates), templates[i].followUpID == nil else { continue }
-            templates[i].followUpID = target
-            templates[i].followUpDelay = spec.followUpDelay
         }
         guard includeConfigs else { return nil }
         let missing = Self.configs.filter { preset in !configs.contains { $0.name == preset.name } }
